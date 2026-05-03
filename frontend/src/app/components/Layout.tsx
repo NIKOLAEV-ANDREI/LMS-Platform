@@ -1,0 +1,121 @@
+﻿import { useState, useEffect } from "react";
+import { useNavigate, Link, useLocation } from "react-router";
+import { Button } from "./ui/button";
+import { api, User } from "../utils/api";
+import { GraduationCap, Home, User as UserIcon, LogOut, Users } from "lucide-react";
+
+interface LayoutProps {
+  children: React.ReactNode;
+}
+
+export default function Layout({ children }: LayoutProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { user } = await api.getSession();
+        setUser(user);
+      } catch (error) {
+        navigate('/');
+      }
+    };
+
+    checkSession();
+  }, [navigate]);
+
+  const handleLogout = () => {
+    api.logout();
+    navigate('/');
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const getDashboardLink = () => {
+    if (user.role === 'student') return '/student/dashboard';
+    if (user.role === 'teacher') return '/teacher/dashboard';
+    if (user.role === 'admin') return '/admin/dashboard';
+    return '/';
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <Link to={getDashboardLink()} className="flex items-center gap-2">
+              <div className="bg-primary p-2 rounded-lg">
+                <GraduationCap className="h-6 w-6 text-white" />
+              </div>
+              <span className="text-xl font-semibold">LMS Platform</span>
+            </Link>
+
+            <nav className="hidden md:flex items-center gap-4">
+              {user.role !== 'admin' && (
+                <Link to={getDashboardLink()}>
+                  <Button
+                    variant={location.pathname.includes('dashboard') ? 'default' : 'ghost'}
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <Home className="h-4 w-4" />
+                    Главная
+                  </Button>
+                </Link>
+              )}
+
+              {user.role === 'admin' && (
+                <Link to="/admin/dashboard">
+                  <Button
+                    variant={location.pathname.includes('admin') ? 'default' : 'ghost'}
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <Users className="h-4 w-4" />
+                    Пользователи
+                  </Button>
+                </Link>
+              )}
+
+              <Link to="/profile">
+                <Button
+                  variant={location.pathname === '/profile' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="gap-2"
+                >
+                  <UserIcon className="h-4 w-4" />
+                  Профиль
+                </Button>
+              </Link>
+
+              <Button onClick={handleLogout} variant="ghost" size="sm" className="gap-2">
+                <LogOut className="h-4 w-4" />
+                Выход
+              </Button>
+            </nav>
+
+            <div className="flex md:hidden items-center gap-2">
+              <Button onClick={handleLogout} variant="ghost" size="sm">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="lms-learning-background flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}

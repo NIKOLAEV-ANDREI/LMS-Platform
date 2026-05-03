@@ -1,0 +1,361 @@
+﻿import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import { BookOpen, Edit, Plus, Trash2, TrendingUp, Users } from "lucide-react";
+import { toast } from "sonner";
+import Layout from "../Layout";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../ui/alert-dialog";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Textarea } from "../ui/textarea";
+import CharCounter from "../shared/CharCounter";
+import { api, Course, User } from "../../utils/api";
+import { applyTextLimit, LIMITS } from "../../utils/limits";
+
+export default function TeacherDashboard() {
+  const [user, setUser] = useState<User | null>(null);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newCourse, setNewCourse] = useState({
+    title: "",
+    description: "",
+    imageUrl: "",
+  });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const { user: userData } = await api.getSession();
+      setUser(userData);
+
+      const { courses: allCourses } = await api.getCourses();
+      setCourses(allCourses.filter((course) => course.teacherId === userData.id));
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка загрузки данных");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateCourse = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      await api.createCourse(newCourse.title, newCourse.description, newCourse.imageUrl);
+      toast.success("Курс создан успешно");
+      setDialogOpen(false);
+      setNewCourse({ title: "", description: "", imageUrl: "" });
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка создания курса");
+    }
+  };
+
+  const handlePublishCourse = async (courseId: string) => {
+    try {
+      await api.publishCourse(courseId);
+      toast.success("Курс опубликован");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка публикации курса");
+    }
+  };
+
+  const handleUnpublishCourse = async (courseId: string) => {
+    try {
+      await api.unpublishCourse(courseId);
+      toast.success("Курс снят с публикации");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка снятия курса с публикации");
+    }
+  };
+
+  const handleDeleteCourse = async (courseId: string) => {
+    try {
+      await api.removeCourse(courseId);
+      toast.success("Курс удален");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка удаления курса");
+    }
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex h-64 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  const totalStudents = courses.reduce((sum, course) => sum + course.enrolledStudents.length, 0);
+  const totalModules = courses.reduce((sum, course) => sum + course.modules.length, 0);
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">Добро пожаловать, {user?.name}!</h1>
+            <p className="mt-1 text-muted-foreground">Управление вашими курсами</p>
+          </div>
+
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Создать курс
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Создать новый курс</DialogTitle>
+                <DialogDescription>Заполните информацию о курсе. Модули и уроки можно добавить после создания.</DialogDescription>
+              </DialogHeader>
+
+              <form onSubmit={handleCreateCourse} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Название курса</Label>
+                  <Input
+                    id="title"
+                    value={newCourse.title}
+                    onChange={(event) =>
+                      setNewCourse((prev) => ({
+                        ...prev,
+                        title: applyTextLimit(event.target.value, LIMITS.courseTitle, "Название курса"),
+                      }))
+                    }
+                    required
+                  />
+                  <CharCounter value={newCourse.title} max={LIMITS.courseTitle} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Описание</Label>
+                  <Textarea
+                    id="description"
+                    value={newCourse.description}
+                    onChange={(event) =>
+                      setNewCourse((prev) => ({
+                        ...prev,
+                        description: applyTextLimit(event.target.value, LIMITS.courseDescription, "Описание курса"),
+                      }))
+                    }
+                    rows={4}
+                    required
+                  />
+                  <CharCounter value={newCourse.description} max={LIMITS.courseDescription} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="imageUrl">URL изображения (необязательно)</Label>
+                  <Input
+                    id="imageUrl"
+                    type="url"
+                    value={newCourse.imageUrl}
+                    onChange={(event) =>
+                      setNewCourse((prev) => ({
+                        ...prev,
+                        imageUrl: applyTextLimit(event.target.value, LIMITS.imageUrl, "URL изображения"),
+                      }))
+                    }
+                  />
+                </div>
+
+                <Button type="submit" className="w-full">
+                  Создать курс
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Всего курсов</CardTitle>
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{courses.length}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Всего студентов</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalStudents}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Всего модулей</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalModules}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div>
+          <h2 className="mb-4 text-2xl font-semibold">Мои курсы</h2>
+          {courses.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
+                <p className="text-muted-foreground">У вас пока нет курсов</p>
+                <p className="mt-1 text-sm text-muted-foreground">Нажмите кнопку "Создать курс", чтобы начать</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {courses.map((course) => (
+                <Card key={course.id} className="transition-shadow hover:shadow-lg">
+                  <CardHeader className="min-w-0">
+                    <div className="flex justify-end">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Удалить курс?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Курс, его модули и уроки будут удалены без возможности восстановления.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Отмена</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeleteCourse(course.id)}>Удалить</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+
+                    {course.imageUrl && (
+                      <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
+                        <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
+                      </div>
+                    )}
+
+                    <CardTitle
+                      className="line-clamp-1 text-lg leading-tight break-words [overflow-wrap:anywhere]"
+                      title={course.title}
+                    >
+                      {course.title}
+                    </CardTitle>
+                    <CardDescription
+                      className="line-clamp-2 break-words [overflow-wrap:anywhere]"
+                      title={course.description}
+                    >
+                      {course.description}
+                    </CardDescription>
+
+                    <div>
+                      {course.status === "approved" ? <Badge>Опубликован</Badge> : <Badge variant="secondary">Черновик</Badge>}
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="text-muted-foreground">Студенты</div>
+                        <div className="font-medium">{course.enrolledStudents.length}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Модули</div>
+                        <div className="font-medium">{course.modules.length}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Link to={`/courses/${course.id}/edit`} className="flex-1">
+                        <Button variant="outline" className="w-full gap-2">
+                          <Edit className="h-4 w-4" />
+                          Редактировать
+                        </Button>
+                      </Link>
+                      <Link to={`/courses/${course.id}`} className="flex-1">
+                        <Button className="w-full">Просмотр</Button>
+                      </Link>
+                    </div>
+
+                    {course.status !== "approved" && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button className="w-full">Опубликовать курс</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Опубликовать курс?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              После публикации курс появится у студентов в каталоге.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Отмена</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handlePublishCourse(course.id)}>Опубликовать</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+
+                    {course.status === "approved" && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="secondary" className="w-full">
+                            Снять с публикации
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Снять курс с публикации?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              После этого курс перестанет отображаться студентам в каталоге.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Отмена</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleUnpublishCourse(course.id)}>
+                              Снять с публикации
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
+}

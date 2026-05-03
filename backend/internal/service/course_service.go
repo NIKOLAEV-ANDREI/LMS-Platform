@@ -1,0 +1,716 @@
+package service
+
+import (
+	"errors"
+	"strings"
+
+	"lms-backend/internal/domain"
+	"lms-backend/internal/repository"
+)
+
+type CourseService struct {
+	courses     repository.CourseRepository
+	enrollments repository.EnrollmentRepository
+}
+
+func NewCourseService(courses repository.CourseRepository, enrollments repository.EnrollmentRepository) *CourseService {
+	return &CourseService{courses: courses, enrollments: enrollments}
+}
+
+func (s *CourseService) CreateByTeacher(teacherID int64, title, description string) (*domain.Course, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateCoursePayload(title, description); err != nil {
+		return nil, err
+	}
+	course := &domain.Course{
+		Title:       title,
+		Description: description,
+		TeacherID:   teacherID,
+		Status:      "pending",
+	}
+	if err := s.courses.Create(course); err != nil {
+		return nil, err
+	}
+	return course, nil
+}
+
+func (s *CourseService) ListPublicCourses() ([]domain.Course, error) {
+	return s.courses.ListApproved()
+}
+
+func (s *CourseService) CourseByID(courseID int64) (*domain.Course, error) {
+	return s.courses.ByID(courseID)
+}
+
+func (s *CourseService) ListTeacherCourses(teacherID int64) ([]domain.Course, error) {
+	return s.courses.ListByTeacher(teacherID)
+}
+
+func (s *CourseService) ListTeacherDeletedCourses(teacherID int64) ([]domain.Course, error) {
+	return s.courses.ListDeletedByTeacher(teacherID)
+}
+
+func (s *CourseService) Enroll(studentID, courseID int64) error {
+	return s.enrollments.Enroll(studentID, courseID)
+}
+
+func (s *CourseService) UpdateProgress(studentID, courseID int64, progress int) error {
+	if progress < 0 || progress > 100 {
+		return errors.New("progress must be 0..100")
+	}
+	return s.enrollments.SetProgress(studentID, courseID, progress)
+}
+
+func (s *CourseService) StudentEnrollments(studentID int64) ([]domain.Enrollment, error) {
+	return s.enrollments.ListByStudent(studentID)
+}
+
+func (s *CourseService) CompleteLesson(studentID, courseID, lessonID int64) (*domain.CourseProgress, error) {
+	return s.enrollments.CompleteLesson(studentID, courseID, lessonID)
+}
+
+func (s *CourseService) GetCourseProgress(studentID, courseID int64) (*domain.CourseProgress, error) {
+	return s.enrollments.GetCourseProgress(studentID, courseID)
+}
+
+func (s *CourseService) PublishByTeacher(teacherID, courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	return s.courses.SetStatus(courseID, "approved")
+}
+
+func (s *CourseService) PublishByAdmin(courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	return s.courses.SetStatus(courseID, "approved")
+}
+
+func (s *CourseService) UnpublishByTeacher(teacherID, courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	return s.courses.SetStatus(courseID, "pending")
+}
+
+func (s *CourseService) UnpublishByAdmin(courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	return s.courses.SetStatus(courseID, "pending")
+}
+
+func (s *CourseService) DeleteByTeacher(teacherID, courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	return s.courses.DeleteCourse(courseID)
+}
+
+func (s *CourseService) RestoreByTeacher(teacherID, courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	return s.courses.SetStatus(courseID, "pending")
+}
+
+func (s *CourseService) UpdateCourseByTeacher(teacherID, courseID int64, title, description string) (*domain.Course, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateCoursePayload(title, description); err != nil {
+		return nil, err
+	}
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+	course.Title = title
+	course.Description = description
+	if err := s.courses.UpdateCourse(course); err != nil {
+		return nil, err
+	}
+	return course, nil
+}
+
+func (s *CourseService) UpdateCourseByAdmin(courseID int64, title, description string) (*domain.Course, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateCoursePayload(title, description); err != nil {
+		return nil, err
+	}
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	course.Title = title
+	course.Description = description
+	if err := s.courses.UpdateCourse(course); err != nil {
+		return nil, err
+	}
+	return course, nil
+}
+
+func (s *CourseService) RestoreByAdmin(courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	return s.courses.SetStatus(courseID, "pending")
+}
+
+func (s *CourseService) DeleteByAdmin(courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	return s.courses.DeleteCourse(courseID)
+}
+
+func (s *CourseService) AddModuleByTeacher(teacherID, courseID int64, title, description string) (*domain.Module, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateModulePayload(title, description); err != nil {
+		return nil, err
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+
+	module := &domain.Module{
+		CourseID:    courseID,
+		Title:       title,
+		Description: description,
+	}
+	if err := s.courses.AddModule(module); err != nil {
+		return nil, err
+	}
+	return module, nil
+}
+
+func (s *CourseService) AddModuleByAdmin(courseID int64, title, description string) (*domain.Module, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateModulePayload(title, description); err != nil {
+		return nil, err
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+
+	module := &domain.Module{
+		CourseID:    courseID,
+		Title:       title,
+		Description: description,
+	}
+	if err := s.courses.AddModule(module); err != nil {
+		return nil, err
+	}
+	return module, nil
+}
+
+func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+	title = strings.TrimSpace(title)
+	content = strings.TrimSpace(content)
+	videoURL = strings.TrimSpace(videoURL)
+	lessonType = strings.TrimSpace(lessonType)
+	if lessonType == "" {
+		lessonType = "text"
+	}
+	if err := validateLessonCommon(title, content, videoURL); err != nil {
+		return nil, err
+	}
+	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
+		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		if err := validateLessonTestData(test); err != nil {
+			return nil, err
+		}
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+
+	moduleFound := false
+	for _, m := range course.Modules {
+		if m.ID == moduleID {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		return nil, errors.New("module not found in course")
+	}
+
+	lesson := &domain.Lesson{
+		ModuleID: moduleID,
+		Title:    title,
+		Content:  content,
+		Type:     lessonType,
+		VideoURL: videoURL,
+		Test:     test,
+	}
+	if err := s.courses.AddLesson(lesson); err != nil {
+		return nil, err
+	}
+	return lesson, nil
+}
+
+func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+	title = strings.TrimSpace(title)
+	content = strings.TrimSpace(content)
+	videoURL = strings.TrimSpace(videoURL)
+	lessonType = strings.TrimSpace(lessonType)
+	if lessonType == "" {
+		lessonType = "text"
+	}
+	if err := validateLessonCommon(title, content, videoURL); err != nil {
+		return nil, err
+	}
+	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
+		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		if err := validateLessonTestData(test); err != nil {
+			return nil, err
+		}
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+
+	moduleFound := false
+	for _, m := range course.Modules {
+		if m.ID == moduleID {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		return nil, errors.New("module not found in course")
+	}
+
+	lesson := &domain.Lesson{
+		ModuleID: moduleID,
+		Title:    title,
+		Content:  content,
+		Type:     lessonType,
+		VideoURL: videoURL,
+		Test:     test,
+	}
+	if err := s.courses.AddLesson(lesson); err != nil {
+		return nil, err
+	}
+	return lesson, nil
+}
+
+func (s *CourseService) UpdateModuleByTeacher(teacherID, courseID, moduleID int64, title, description string) (*domain.Module, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateModulePayload(title, description); err != nil {
+		return nil, err
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+
+	moduleFound := false
+	for _, m := range course.Modules {
+		if m.ID == moduleID {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		return nil, errors.New("module not found in course")
+	}
+
+	module := &domain.Module{
+		ID:          moduleID,
+		CourseID:    courseID,
+		Title:       title,
+		Description: description,
+	}
+	if err := s.courses.UpdateModule(module); err != nil {
+		return nil, err
+	}
+	return module, nil
+}
+
+func (s *CourseService) UpdateModuleByAdmin(courseID, moduleID int64, title, description string) (*domain.Module, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if err := validateModulePayload(title, description); err != nil {
+		return nil, err
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+
+	moduleFound := false
+	for _, m := range course.Modules {
+		if m.ID == moduleID {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		return nil, errors.New("module not found in course")
+	}
+
+	module := &domain.Module{
+		ID:          moduleID,
+		CourseID:    courseID,
+		Title:       title,
+		Description: description,
+	}
+	if err := s.courses.UpdateModule(module); err != nil {
+		return nil, err
+	}
+	return module, nil
+}
+
+func (s *CourseService) DeleteModuleByTeacher(teacherID, courseID, moduleID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+
+	moduleFound := false
+	for _, m := range course.Modules {
+		if m.ID == moduleID {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		return errors.New("module not found in course")
+	}
+
+	return s.courses.DeleteModule(moduleID)
+}
+
+func (s *CourseService) DeleteModuleByAdmin(courseID, moduleID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+
+	moduleFound := false
+	for _, m := range course.Modules {
+		if m.ID == moduleID {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		return errors.New("module not found in course")
+	}
+
+	return s.courses.DeleteModule(moduleID)
+}
+
+func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+	title = strings.TrimSpace(title)
+	content = strings.TrimSpace(content)
+	videoURL = strings.TrimSpace(videoURL)
+	lessonType = strings.TrimSpace(lessonType)
+	if lessonType == "" {
+		lessonType = "text"
+	}
+	if err := validateLessonCommon(title, content, videoURL); err != nil {
+		return nil, err
+	}
+	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
+		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		if err := validateLessonTestData(test); err != nil {
+			return nil, err
+		}
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+
+	moduleFound := false
+	lessonFound := false
+	for _, m := range course.Modules {
+		if m.ID != moduleID {
+			continue
+		}
+		moduleFound = true
+		for _, l := range m.Lessons {
+			if l.ID == lessonID {
+				lessonFound = true
+				break
+			}
+		}
+		break
+	}
+	if !moduleFound {
+		return nil, errors.New("module not found in course")
+	}
+	if !lessonFound {
+		return nil, errors.New("lesson not found in module")
+	}
+
+	lesson := &domain.Lesson{
+		ID:       lessonID,
+		ModuleID: moduleID,
+		Title:    title,
+		Content:  content,
+		Type:     lessonType,
+		VideoURL: videoURL,
+		Test:     test,
+	}
+	if err := s.courses.UpdateLesson(lesson); err != nil {
+		return nil, err
+	}
+	return lesson, nil
+}
+
+func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+	title = strings.TrimSpace(title)
+	content = strings.TrimSpace(content)
+	videoURL = strings.TrimSpace(videoURL)
+	lessonType = strings.TrimSpace(lessonType)
+	if lessonType == "" {
+		lessonType = "text"
+	}
+	if err := validateLessonCommon(title, content, videoURL); err != nil {
+		return nil, err
+	}
+	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
+		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		if err := validateLessonTestData(test); err != nil {
+			return nil, err
+		}
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+
+	moduleFound := false
+	lessonFound := false
+	for _, m := range course.Modules {
+		if m.ID != moduleID {
+			continue
+		}
+		moduleFound = true
+		for _, l := range m.Lessons {
+			if l.ID == lessonID {
+				lessonFound = true
+				break
+			}
+		}
+		break
+	}
+	if !moduleFound {
+		return nil, errors.New("module not found in course")
+	}
+	if !lessonFound {
+		return nil, errors.New("lesson not found in module")
+	}
+
+	lesson := &domain.Lesson{
+		ID:       lessonID,
+		ModuleID: moduleID,
+		Title:    title,
+		Content:  content,
+		Type:     lessonType,
+		VideoURL: videoURL,
+		Test:     test,
+	}
+	if err := s.courses.UpdateLesson(lesson); err != nil {
+		return nil, err
+	}
+	return lesson, nil
+}
+
+func (s *CourseService) DeleteLessonByTeacher(teacherID, courseID, moduleID, lessonID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+
+	moduleFound := false
+	lessonFound := false
+	for _, m := range course.Modules {
+		if m.ID != moduleID {
+			continue
+		}
+		moduleFound = true
+		for _, l := range m.Lessons {
+			if l.ID == lessonID {
+				lessonFound = true
+				break
+			}
+		}
+		break
+	}
+	if !moduleFound {
+		return errors.New("module not found in course")
+	}
+	if !lessonFound {
+		return errors.New("lesson not found in module")
+	}
+
+	return s.courses.DeleteLesson(lessonID)
+}
+
+func (s *CourseService) DeleteLessonByAdmin(courseID, moduleID, lessonID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+
+	moduleFound := false
+	lessonFound := false
+	for _, m := range course.Modules {
+		if m.ID != moduleID {
+			continue
+		}
+		moduleFound = true
+		for _, l := range m.Lessons {
+			if l.ID == lessonID {
+				lessonFound = true
+				break
+			}
+		}
+		break
+	}
+	if !moduleFound {
+		return errors.New("module not found in course")
+	}
+	if !lessonFound {
+		return errors.New("lesson not found in module")
+	}
+
+	return s.courses.DeleteLesson(lessonID)
+}

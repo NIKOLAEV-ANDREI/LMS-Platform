@@ -1,0 +1,7 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LMS favicon">
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#27A5E7"/>
+  <path d="M12 24L32 14L52 24L32 34L12 24Z" fill="#FFFFFF"/>
+  <path d="M18 30V37C18 42.2 24.3 46 32 46C39.7 46 46 42.2 46 37V30L32 37L18 30Z" fill="#FFFFFF"/>
+  <path d="M52 24V36" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="52" cy="39" r="2.6" fill="#FFFFFF"/>
+</svg>
