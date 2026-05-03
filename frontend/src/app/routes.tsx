@@ -9,6 +9,7 @@ import AdminUserPage from "./components/dashboards/AdminUserPage";
 import Profile from "./components/Profile";
 import CoursePage from "./components/courses/CoursePage";
 import CourseEditor from "./components/courses/CourseEditor";
+import LessonEditor from "./components/courses/LessonEditor";
 import LessonViewer from "./components/courses/LessonViewer";
 import NotFound from "./components/NotFound";
 
@@ -24,9 +25,11 @@ export const router = createBrowserRouter([
       { path: "admin/dashboard", Component: AdminDashboard },
       { path: "admin/users/:id", Component: AdminUserPage },
       { path: "admin/courses/:id/edit", Component: CourseEditor },
+      { path: "admin/courses/:courseId/lessons/:lessonId/edit", Component: LessonEditor },
       { path: "profile", Component: Profile },
       { path: "courses/:id", Component: CoursePage },
       { path: "courses/:id/edit", Component: CourseEditor },
+      { path: "courses/:courseId/lessons/:lessonId/edit", Component: LessonEditor },
       { path: "courses/:courseId/lessons/:lessonId", Component: LessonViewer },
       { path: "*", Component: NotFound },
     ],

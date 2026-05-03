@@ -124,6 +124,50 @@
   background-image: none;
 }
 
+.rich-text-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.rich-text-content {
+  line-height: 1.7;
+  color: var(--foreground);
+}
+
+.rich-text-content h1,
+.rich-text-content h2,
+.rich-text-content h3,
+.rich-text-content p,
+.rich-text-content li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rich-text-content h1 {
+  font-size: 2rem;
+  margin: 0 0 0.8rem;
+}
+
+.rich-text-content h2 {
+  font-size: 1.5rem;
+  margin: 0 0 0.7rem;
+}
+
+.rich-text-content h3 {
+  font-size: 1.25rem;
+  margin: 0 0 0.6rem;
+}
+
+.rich-text-content p {
+  margin: 0 0 0.8rem;
+}
+
+.rich-text-content ul,
+.rich-text-content ol {
+  margin: 0 0 0.8rem 1.25rem;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

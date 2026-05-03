@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Label } from "../ui/label";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { api, Course, Lesson } from "../../utils/api";
+import { sanitizeRichText } from "../../utils/richText";
 
 export default function LessonViewer() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
@@ -128,6 +129,9 @@ export default function LessonViewer() {
     );
   }
 
+  const renderedContent = sanitizeRichText(lesson.content || "");
+  const hasRichMarkup = /<\/?[a-z][\s\S]*>/i.test(renderedContent);
+
   return (
     <Layout>
       <div className="mx-auto max-w-4xl space-y-6">
@@ -150,10 +154,12 @@ export default function LessonViewer() {
 
           <CardContent className="space-y-6">
             {lesson.type === "text" && (
-              <div className="prose max-w-none">
-                <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">
-                  {lesson.content}
-                </p>
+              <div className="rich-text-content">
+                {hasRichMarkup ? (
+                  <div dangerouslySetInnerHTML={{ __html: renderedContent }} />
+                ) : (
+                  <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">{lesson.content}</p>
+                )}
               </div>
             )}
 
@@ -170,10 +176,12 @@ export default function LessonViewer() {
                   </div>
                 )}
                 {lesson.content && (
-                  <div className="prose max-w-none">
-                    <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">
-                      {lesson.content}
-                    </p>
+                  <div className="rich-text-content">
+                    {hasRichMarkup ? (
+                      <div dangerouslySetInnerHTML={{ __html: renderedContent }} />
+                    ) : (
+                      <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">{lesson.content}</p>
+                    )}
                   </div>
                 )}
               </div>

@@ -878,3 +878,234 @@ Updated file:
 Verification:
 - `npm run check:encoding` passed
 - `npm run build` passed
+
+## 49) Teacher profile: added "Создать курс" button with same dialog as teacher dashboard (2026-05-03)
+Implemented requested control for teacher profile:
+- Added `Создать курс` button in teacher profile courses section.
+- Added the same creation dialog flow as on teacher dashboard:
+  - fields: title, description, optional image URL
+  - same text limits + live counters
+  - submit creates course via API and refreshes list.
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 50) Course-creation dialogs switched to fullscreen editing mode (2026-05-03)
+Updated creation/editing dialogs to fullscreen UX for course-authoring flow.
+
+Fullscreen dialogs applied to:
+- Teacher dashboard: `Создать курс`
+- Teacher profile: `Создать курс`
+- Course editor: `Добавить/Редактировать модуль`
+- Course editor: `Добавить/Редактировать урок`
+
+Applied class preset:
+- `w-screen max-w-screen h-screen max-h-screen rounded-none border-0 p-6 sm:p-8 overflow-y-auto`
+
+Updated files:
+- `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+- `frontend/src/app/components/Profile.tsx`
+- `frontend/src/app/components/courses/CourseEditor.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 51) Reverted fullscreen course-authoring dialogs back to previous sizing (2026-05-03)
+Rolled back the last fullscreen-dialog change as requested.
+
+Reverted to previous dialog behavior:
+- Teacher dashboard `Создать курс`: default dialog sizing restored.
+- Teacher profile `Создать курс`: default dialog sizing restored.
+- Course editor module dialog: default dialog sizing restored.
+- Course editor lesson dialog: restored prior constrained size
+  (`max-w-2xl max-h-[90vh] overflow-y-auto`).
+
+Updated files:
+- `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+- `frontend/src/app/components/Profile.tsx`
+- `frontend/src/app/components/courses/CourseEditor.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 52) Lesson creation flow redesigned: minimal create dialog + separate fullscreen lesson editor page (2026-05-03)
+Implemented requested authoring UX split.
+
+Changes:
+- `Добавить урок` in course editor is now minimal:
+  - only `Название урока`
+  - only `Тип урока`
+  - no `Содержание урока` in this creation dialog.
+- Lesson edit action (pencil on lesson row) no longer opens dialog.
+  - now opens dedicated lesson page with title and subtitle `Редактор урока`.
+- Added new fullscreen lesson editor page for detailed editing:
+  - text lesson content editing
+  - video URL + description editing
+  - full test questions editor
+  - save lesson action.
+
+Routing:
+- Added teacher route: `/courses/:courseId/lessons/:lessonId/edit`
+- Added admin route: `/admin/courses/:courseId/lessons/:lessonId/edit`
+
+Layout:
+- Added optional `fullWidth` mode in `Layout`.
+- New lesson editor page uses `Layout fullWidth` for full-width workspace.
+
+Files updated:
+- `frontend/src/app/components/Layout.tsx`
+- `frontend/src/app/components/courses/CourseEditor.tsx`
+- `frontend/src/app/components/courses/LessonEditor.tsx` (new)
+- `frontend/src/app/routes.tsx`
+
+Note:
+- For quick creation of test lessons from minimal dialog, a valid placeholder test question is generated automatically; details should be finalized in the new lesson editor.
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 53) Course editor title now updates live while typing (2026-05-03)
+Aligned course editor heading behavior with lesson editor:
+- In `CourseEditor`, page H1 now uses current form state (`courseForm.title`) with fallback to original `course.title`.
+- Result: title changes are reflected immediately in the page header while typing.
+
+Updated file:
+- `frontend/src/app/components/courses/CourseEditor.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 54) Lesson editor: full rich text formatting for text lessons (2026-05-03)
+Implemented a full rich text authoring mode in lesson editor content.
+
+What was added:
+- New reusable component: `RichTextEditor`
+  - Toolbar buttons: bold, italic, underline, strikethrough.
+  - Heading block switch: paragraph, H1, H2, H3.
+  - Text color picker with 7 preset colors.
+  - Content limit enforcement by plain-text length (`LIMITS.lessonContent`) with validation toast.
+- Text lesson editing in `LessonEditor` now uses `RichTextEditor` instead of plain textarea.
+- Lesson save now sanitizes text-lesson HTML before sending to backend.
+- Lesson viewing now safely renders formatted HTML content for students (`sanitizeRichText` + `dangerouslySetInnerHTML`).
+- Added rich-text CSS rules for placeholder and rendered typography.
+
+Encoding hardening:
+- Rewrote `LessonEditor.tsx` in UTF-8 to remove mojibake markers and stabilize Cyrillic text rendering.
+
+Updated files:
+- `frontend/src/app/components/shared/RichTextEditor.tsx` (new)
+- `frontend/src/app/components/courses/LessonEditor.tsx`
+- `frontend/src/app/components/courses/LessonViewer.tsx`
+- `frontend/src/styles/theme.css`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 55) Rich text editor UX fixes: color selection, cursor stability, active toolbar states (2026-05-03)
+Fixed the lesson text editor interaction bugs and improved formatting UX.
+
+Problems fixed:
+- Color buttons previously moved cursor to the start and did not apply color reliably.
+- Formatting controls had no active-state indication.
+
+What was changed:
+- Reworked `RichTextEditor` internal sync logic to avoid resetting editor HTML on each local input.
+  - Added emitted-value tracking to prevent caret jumps caused by parent re-render.
+- Prevented focus loss on toolbar click using `onMouseDown(event.preventDefault())`.
+  - Selection/caret stays in editor while applying commands.
+- Added active visual states for formatting controls:
+  - bold/italic/underline/strikethrough buttons now highlighted when active.
+  - heading mode buttons (`P`, `H1`, `H2`, `H3`) now highlighted for current block type.
+- Added selected-color indicator:
+  - chosen color button gets blue ring (`ring-primary`).
+- Added toolbar state tracking from current selection/caret:
+  - listens to `selectionchange`, `keyup`, `mouseup` and syncs active states.
+- Enabled CSS-styled formatting mode (`styleWithCSS`) for consistent color application.
+
+Behavior clarification now:
+- Color applies to selected text.
+- If no text is selected, color is applied at caret and used for newly typed text.
+
+Updated file:
+- `frontend/src/app/components/shared/RichTextEditor.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 56) Rich text regression fix: bold/italic/underline/strike restored (2026-05-03)
+Fixed regression where text formatting stopped working (except headings/color).
+
+Root cause:
+- `RichTextEditor` forced `document.execCommand("styleWithCSS", true)` behavior.
+- Bold/italic/underline/strike were emitted as inline styles on `<span>`.
+- Sanitizer keeps only color style and strips other styles, so formatting disappeared.
+
+Fix:
+- Switched editor back to non-CSS command mode:
+  - `document.execCommand("styleWithCSS", false, false)`
+- Formatting now emits semantic tags (`<b>`, `<i>`, `<u>`, `<strike>`) that are allowed by sanitizer.
+
+Updated file:
+- `frontend/src/app/components/shared/RichTextEditor.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 57) Lesson editor draft autosave + restore after reload (2026-05-03)
+Implemented draft persistence for lesson editing so data is not lost on page refresh.
+
+What was added:
+- In `LessonEditor`, added local draft storage in `localStorage` per lesson key:
+  - key format: `lms:lesson-editor-draft:{courseId}:{lessonId}`
+- Autosave while editing (debounced ~300ms):
+  - saves current `lessonForm` and `testQuestions`.
+- Restore on lesson editor load:
+  - if draft exists, editor restores draft values instead of server snapshot.
+  - shows toast: `Черновик урока восстановлен`.
+- On successful lesson save:
+  - corresponding draft is removed from `localStorage`.
+
+Result:
+- Typed lesson content (including rich text), title, type, video fields, and test question edits survive page reloads until user explicitly saves lesson.
+
+Updated file:
+- `frontend/src/app/components/courses/LessonEditor.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 58) Rich text color fix: support rgb() color values in sanitizer (2026-05-03)
+Fixed remaining issue where text color formatting was not preserved.
+
+Root cause:
+- Browser/editor may emit color as `rgb(r, g, b)`.
+- `sanitizeRichText` previously accepted only hex (`#RRGGBB`) in both:
+  - `<font color="...">` conversion
+  - inline style color normalization
+- As a result, color was stripped during sanitize pass.
+
+Fix:
+- Replaced hex-only normalizer with `normalizeColor` supporting:
+  - `#RRGGBB`
+  - `rgb(r, g, b)`
+- Converted rgb values to uppercase hex before allow-list check.
+- Applied new normalization for both font color attribute and style color.
+
+Updated file:
+- `frontend/src/app/utils/richText.ts`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed

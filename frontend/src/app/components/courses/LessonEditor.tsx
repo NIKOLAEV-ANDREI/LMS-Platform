@@ -1,0 +1,438 @@
+﻿import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { ClipboardList, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import Layout from "../Layout";
+import CharCounter from "../shared/CharCounter";
+import RichTextEditor from "../shared/RichTextEditor";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Textarea } from "../ui/textarea";
+import { api, Course, Lesson } from "../../utils/api";
+import { applyTextLimit, LIMITS } from "../../utils/limits";
+import { sanitizeRichText, toPlainText } from "../../utils/richText";
+
+type EditableQuestion = {
+  id: string;
+  type: "single" | "multiple" | "open";
+  question: string;
+  options: string[];
+  correctAnswer: number;
+};
+
+type LessonDraft = {
+  lessonForm: {
+    title: string;
+    content: string;
+    type: "text" | "video" | "test";
+    videoUrl: string;
+  };
+  testQuestions: EditableQuestion[];
+  savedAt: string;
+};
+
+export default function LessonEditor() {
+  const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isAdminMode = location.pathname.startsWith("/admin/courses/");
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [course, setCourse] = useState<Course | null>(null);
+  const [moduleId, setModuleId] = useState<string | null>(null);
+  const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [lessonForm, setLessonForm] = useState({
+    title: "",
+    content: "",
+    type: "text" as "text" | "video" | "test",
+    videoUrl: "",
+  });
+  const [testQuestions, setTestQuestions] = useState<EditableQuestion[]>([]);
+  const draftStorageKey = courseId && lessonId ? `lms:lesson-editor-draft:${courseId}:${lessonId}` : null;
+
+  useEffect(() => {
+    loadLesson();
+  }, [courseId, lessonId]);
+
+  useEffect(() => {
+    if (!draftReady || !draftStorageKey) return;
+    const timer = window.setTimeout(() => {
+      const draft: LessonDraft = {
+        lessonForm,
+        testQuestions,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(draftStorageKey, JSON.stringify(draft));
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [draftReady, draftStorageKey, lessonForm, testQuestions]);
+
+  const loadLesson = async () => {
+    try {
+      setDraftReady(false);
+      if (!courseId || !lessonId) return;
+      const { course: courseData } = await api.getCourse(courseId);
+      setCourse(courseData);
+
+      let foundLesson: Lesson | null = null;
+      let foundModuleId: string | null = null;
+      for (const module of courseData.modules) {
+        const currentLesson = module.lessons.find((entry) => entry.id === lessonId);
+        if (currentLesson) {
+          foundLesson = currentLesson;
+          foundModuleId = module.id;
+          break;
+        }
+      }
+
+      if (!foundLesson || !foundModuleId) {
+        toast.error("Урок не найден");
+        navigate(isAdminMode ? `/admin/courses/${courseId}/edit` : `/courses/${courseId}/edit`);
+        return;
+      }
+
+      setLesson(foundLesson);
+      setModuleId(foundModuleId);
+      const serverLessonForm = {
+        title: foundLesson.title,
+        content: foundLesson.content || "",
+        type: foundLesson.type,
+        videoUrl: foundLesson.videoUrl || "",
+      };
+
+      const serverQuestions =
+        foundLesson.type === "test" && foundLesson.test?.questions?.length
+          ? foundLesson.test.questions.map((question, index) => ({
+              id: question.id || `q-${Date.now()}-${index}`,
+              type: question.type || "single",
+              question: question.question || "",
+              options: Array.isArray(question.options) && question.options.length > 0 ? question.options : ["", "", "", ""],
+              correctAnswer: typeof question.correctAnswer === "number" ? question.correctAnswer : 0,
+            }))
+          : [];
+
+      let draftData: LessonDraft | null = null;
+      if (draftStorageKey) {
+        const rawDraft = localStorage.getItem(draftStorageKey);
+        if (rawDraft) {
+          try {
+            const parsed = JSON.parse(rawDraft) as LessonDraft;
+            if (parsed?.lessonForm?.title !== undefined && parsed?.lessonForm?.content !== undefined) {
+              draftData = parsed;
+            }
+          } catch {
+            localStorage.removeItem(draftStorageKey);
+          }
+        }
+      }
+
+      if (draftData) {
+        setLessonForm(draftData.lessonForm);
+        setTestQuestions(Array.isArray(draftData.testQuestions) ? draftData.testQuestions : []);
+        toast.info("Черновик урока восстановлен");
+      } else {
+        setLessonForm(serverLessonForm);
+        setTestQuestions(serverQuestions);
+      }
+
+      setDraftReady(true);
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка загрузки урока");
+      navigate(isAdminMode ? "/admin/dashboard" : "/teacher/dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addTestQuestion = () => {
+    setTestQuestions((prev) => [
+      ...prev,
+      {
+        id: `q-${Date.now()}-${Math.random()}`,
+        type: "single",
+        question: "",
+        options: ["", "", "", ""],
+        correctAnswer: 0,
+      },
+    ]);
+  };
+
+  const updateQuestion = (index: number, field: "question" | "correctAnswer", value: string | number) => {
+    setTestQuestions((prev) => {
+      const next = [...prev];
+      if (field === "question") {
+        next[index] = {
+          ...next[index],
+          question: applyTextLimit(String(value), LIMITS.questionText, `Текст вопроса ${index + 1}`),
+        };
+      } else {
+        next[index] = { ...next[index], correctAnswer: Number(value) };
+      }
+      return next;
+    });
+  };
+
+  const updateQuestionOption = (questionIndex: number, optionIndex: number, value: string) => {
+    setTestQuestions((prev) => {
+      const next = [...prev];
+      next[questionIndex] = { ...next[questionIndex], options: [...next[questionIndex].options] };
+      next[questionIndex].options[optionIndex] = applyTextLimit(
+        value,
+        LIMITS.questionOption,
+        `Вариант ответа ${optionIndex + 1} для вопроса ${questionIndex + 1}`,
+      );
+      return next;
+    });
+  };
+
+  const removeQuestion = (index: number) => {
+    setTestQuestions((prev) => prev.filter((_, current) => current !== index));
+  };
+
+  const saveLesson = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!courseId || !moduleId || !lesson) return;
+
+    const payload: Partial<Lesson> = {
+      title: lessonForm.title,
+      content:
+        lessonForm.type === "text"
+          ? sanitizeRichText(lessonForm.content)
+          : lessonForm.type === "video"
+            ? lessonForm.content
+            : "",
+      type: lessonForm.type,
+      videoUrl: lessonForm.type === "video" ? lessonForm.videoUrl : "",
+      test: lessonForm.type === "test" ? { questions: testQuestions } : undefined,
+    };
+
+    setSaving(true);
+    try {
+      if (isAdminMode) {
+        await api.updateLessonAsAdmin(courseId, moduleId, lesson.id, payload);
+      } else {
+        await api.updateLesson(courseId, moduleId, lesson.id, payload);
+      }
+      if (draftStorageKey) {
+        localStorage.removeItem(draftStorageKey);
+      }
+      toast.success("Урок обновлен");
+      await loadLesson();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка сохранения урока");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex h-64 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!course || !lesson || !moduleId) {
+    return (
+      <Layout>
+        <div className="py-12 text-center">
+          <p className="text-muted-foreground">Урок не найден</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  const backToCourseEditor = isAdminMode ? `/admin/courses/${courseId}/edit` : `/courses/${courseId}/edit`;
+
+  return (
+    <Layout fullWidth>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">{lessonForm.title || lesson.title}</h1>
+            <p className="mt-1 text-muted-foreground">Редактор урока</p>
+          </div>
+
+          <div className="flex gap-2">
+            <Link to={backToCourseEditor}>
+              <Button variant="outline">Назад к курсу</Button>
+            </Link>
+            <Link to={`/courses/${courseId}`}>
+              <Button variant="outline">Просмотр курса</Button>
+            </Link>
+          </div>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-primary" />
+              Настройки урока
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={saveLesson} className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="lesson-title">Название урока</Label>
+                <Input
+                  id="lesson-title"
+                  value={lessonForm.title}
+                  onChange={(event) =>
+                    setLessonForm((prev) => ({
+                      ...prev,
+                      title: applyTextLimit(event.target.value, LIMITS.lessonTitle, "Название урока"),
+                    }))
+                  }
+                  required
+                />
+                <CharCounter value={lessonForm.title} max={LIMITS.lessonTitle} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="lesson-type">Тип урока</Label>
+                <Select
+                  value={lessonForm.type}
+                  onValueChange={(value: "text" | "video" | "test") => setLessonForm((prev) => ({ ...prev, type: value }))}
+                >
+                  <SelectTrigger id="lesson-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text">Текстовый урок</SelectItem>
+                    <SelectItem value="video">Видео</SelectItem>
+                    <SelectItem value="test">Тест</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {lessonForm.type === "text" && (
+                <div className="space-y-2">
+                  <Label htmlFor="lesson-content">Содержание урока</Label>
+                  <RichTextEditor
+                    id="lesson-content"
+                    value={lessonForm.content}
+                    maxLength={LIMITS.lessonContent}
+                    onChange={(nextValue) =>
+                      setLessonForm((prev) => ({
+                        ...prev,
+                        content: nextValue,
+                      }))
+                    }
+                    placeholder="Введите содержание урока..."
+                  />
+                  <CharCounter value={toPlainText(lessonForm.content)} max={LIMITS.lessonContent} />
+                </div>
+              )}
+
+              {lessonForm.type === "video" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="video-url">URL видео (YouTube)</Label>
+                    <Input
+                      id="video-url"
+                      type="url"
+                      value={lessonForm.videoUrl}
+                      onChange={(event) =>
+                        setLessonForm((prev) => ({
+                          ...prev,
+                          videoUrl: applyTextLimit(event.target.value, LIMITS.videoUrl, "URL видео"),
+                        }))
+                      }
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="video-desc">Описание</Label>
+                    <Textarea
+                      id="video-desc"
+                      value={lessonForm.content}
+                      onChange={(event) =>
+                        setLessonForm((prev) => ({
+                          ...prev,
+                          content: applyTextLimit(event.target.value, LIMITS.lessonContent, "Описание видео"),
+                        }))
+                      }
+                      rows={6}
+                    />
+                    <CharCounter value={lessonForm.content} max={LIMITS.lessonContent} />
+                  </div>
+                </div>
+              )}
+
+              {lessonForm.type === "test" && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label>Вопросы теста</Label>
+                    <Button type="button" onClick={addTestQuestion} size="sm" className="gap-2">
+                      <Plus className="h-4 w-4" />
+                      Добавить вопрос
+                    </Button>
+                  </div>
+
+                  {testQuestions.map((question, questionIndex) => (
+                    <Card key={question.id}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <Input
+                            placeholder="Текст вопроса"
+                            value={question.question}
+                            onChange={(event) => updateQuestion(questionIndex, "question", event.target.value)}
+                            required
+                          />
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeQuestion(questionIndex)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <CharCounter value={question.question || ""} max={LIMITS.questionText} />
+                        <Label className="text-sm">Варианты ответов</Label>
+                        {question.options.map((option, optionIndex) => (
+                          <div key={`${question.id}-${optionIndex}`} className="flex items-center gap-2">
+                            <Input
+                              placeholder={`Вариант ${optionIndex + 1}`}
+                              value={option}
+                              onChange={(event) => updateQuestionOption(questionIndex, optionIndex, event.target.value)}
+                              required
+                            />
+                            <span className="min-w-[76px] text-right text-xs text-muted-foreground">
+                              {option.length}/{LIMITS.questionOption}
+                            </span>
+                            <input
+                              type="radio"
+                              name={`correct-${questionIndex}`}
+                              checked={question.correctAnswer === optionIndex}
+                              onChange={() => updateQuestion(questionIndex, "correctAnswer", optionIndex)}
+                              className="h-4 w-4 text-primary"
+                            />
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? "Сохранение..." : "Сохранить урок"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </Layout>
+  );
+}

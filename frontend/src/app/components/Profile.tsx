@@ -1,9 +1,10 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Award, BookOpen, Calendar, Clock, Edit, Mail, Trash2, TrendingUp, UserMinus } from "lucide-react";
+import { Award, BookOpen, Calendar, Clock, Edit, Mail, Plus, Trash2, TrendingUp, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "./Layout";
 import AvatarField from "./shared/AvatarField";
+import CharCounter from "./shared/CharCounter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,9 +19,11 @@ import {
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Progress } from "./ui/progress";
+import { Textarea } from "./ui/textarea";
 import { api, Course, Progress as CourseProgress, User } from "../utils/api";
 import { applyTextLimit, LIMITS } from "../utils/limits";
 import { formatRuCount } from "../utils/plural";
@@ -33,6 +36,12 @@ export default function Profile() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [unenrollingCourseId, setUnenrollingCourseId] = useState<string | null>(null);
   const [courseActionId, setCourseActionId] = useState<string | null>(null);
+  const [teacherDialogOpen, setTeacherDialogOpen] = useState(false);
+  const [newTeacherCourse, setNewTeacherCourse] = useState({
+    title: "",
+    description: "",
+    imageUrl: "",
+  });
   const [form, setForm] = useState({ name: "", email: "", password: "" });
 
   useEffect(() => {
@@ -167,6 +176,19 @@ export default function Profile() {
       toast.error(error.message || "Ошибка удаления курса");
     } finally {
       setCourseActionId(null);
+    }
+  };
+
+  const handleCreateTeacherCourse = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      await api.createCourse(newTeacherCourse.title, newTeacherCourse.description, newTeacherCourse.imageUrl);
+      toast.success("Курс создан успешно");
+      setTeacherDialogOpen(false);
+      setNewTeacherCourse({ title: "", description: "", imageUrl: "" });
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка создания курса");
     }
   };
 
@@ -497,9 +519,80 @@ export default function Profile() {
 
         {user.role === "teacher" && (
           <div>
-            <div className="mb-4">
-              <h2 className="text-2xl font-semibold">Мои курсы</h2>
-              <p className="text-sm text-muted-foreground">Все курсы, которые вы преподаете</p>
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold">Мои курсы</h2>
+                <p className="text-sm text-muted-foreground">Все курсы, которые вы преподаете</p>
+              </div>
+
+              <Dialog open={teacherDialogOpen} onOpenChange={setTeacherDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Создать курс
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Создать новый курс</DialogTitle>
+                    <DialogDescription>Заполните информацию о курсе. Модули и уроки можно добавить после создания.</DialogDescription>
+                  </DialogHeader>
+
+                  <form onSubmit={handleCreateTeacherCourse} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="teacher-course-title">Название курса</Label>
+                      <Input
+                        id="teacher-course-title"
+                        value={newTeacherCourse.title}
+                        onChange={(event) =>
+                          setNewTeacherCourse((prev) => ({
+                            ...prev,
+                            title: applyTextLimit(event.target.value, LIMITS.courseTitle, "Название курса"),
+                          }))
+                        }
+                        required
+                      />
+                      <CharCounter value={newTeacherCourse.title} max={LIMITS.courseTitle} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="teacher-course-description">Описание</Label>
+                      <Textarea
+                        id="teacher-course-description"
+                        value={newTeacherCourse.description}
+                        onChange={(event) =>
+                          setNewTeacherCourse((prev) => ({
+                            ...prev,
+                            description: applyTextLimit(event.target.value, LIMITS.courseDescription, "Описание курса"),
+                          }))
+                        }
+                        rows={4}
+                        required
+                      />
+                      <CharCounter value={newTeacherCourse.description} max={LIMITS.courseDescription} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="teacher-course-image">URL изображения (необязательно)</Label>
+                      <Input
+                        id="teacher-course-image"
+                        type="url"
+                        value={newTeacherCourse.imageUrl}
+                        onChange={(event) =>
+                          setNewTeacherCourse((prev) => ({
+                            ...prev,
+                            imageUrl: applyTextLimit(event.target.value, LIMITS.imageUrl, "URL изображения"),
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <Button type="submit" className="w-full">
+                      Создать курс
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {courses.length === 0 ? (

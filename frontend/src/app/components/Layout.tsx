@@ -6,9 +6,10 @@ import { GraduationCap, Home, User as UserIcon, LogOut, Users } from "lucide-rea
 
 interface LayoutProps {
   children: React.ReactNode;
+  fullWidth?: boolean;
 }
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout({ children, fullWidth = false }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
@@ -112,7 +113,7 @@ export default function Layout({ children }: LayoutProps) {
       </header>
 
       <main className="lms-learning-background flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className={fullWidth ? "w-full px-4 sm:px-6 lg:px-8 py-8" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"}>
           {children}
         </div>
       </main>

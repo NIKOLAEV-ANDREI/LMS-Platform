@@ -16,7 +16,6 @@ import CharCounter from "../shared/CharCounter";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
 
 type ModuleMode = "create" | "edit";
-type LessonMode = "create" | "edit";
 
 export default function CourseEditor() {
   const { id } = useParams<{ id: string }>();
@@ -34,16 +33,11 @@ export default function CourseEditor() {
   const [moduleForm, setModuleForm] = useState({ title: "", description: "" });
 
   const [lessonDialog, setLessonDialog] = useState(false);
-  const [lessonMode, setLessonMode] = useState<LessonMode>("create");
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [lessonForm, setLessonForm] = useState({
     title: "",
-    content: "",
     type: "text" as "text" | "video" | "test",
-    videoUrl: "",
   });
-  const [testQuestions, setTestQuestions] = useState<any[]>([]);
 
   useEffect(() => {
     loadCourse();
@@ -122,36 +116,16 @@ export default function CourseEditor() {
   };
 
   const openCreateLesson = (moduleId: string) => {
-    setLessonMode("create");
     setSelectedModuleId(moduleId);
-    setEditingLessonId(null);
-    setLessonForm({ title: "", content: "", type: "text", videoUrl: "" });
-    setTestQuestions([]);
+    setLessonForm({ title: "", type: "text" });
     setLessonDialog(true);
   };
 
-  const openEditLesson = (moduleId: string, lesson: Lesson) => {
-    setLessonMode("edit");
-    setSelectedModuleId(moduleId);
-    setEditingLessonId(lesson.id);
-    setLessonForm({
-      title: lesson.title,
-      content: lesson.content || "",
-      type: lesson.type,
-      videoUrl: lesson.videoUrl || "",
-    });
-    setTestQuestions(
-      lesson.type === "test" && lesson.test?.questions?.length
-        ? lesson.test.questions.map((q) => ({
-            id: q.id || `q-${Date.now()}-${Math.random()}`,
-            type: q.type || "single",
-            question: q.question || "",
-            options: Array.isArray(q.options) && q.options.length > 0 ? q.options : ["", "", "", ""],
-            correctAnswer: typeof q.correctAnswer === "number" ? q.correctAnswer : 0,
-          }))
-        : []
-    );
-    setLessonDialog(true);
+  const openEditLesson = (lesson: Lesson) => {
+    const editPath = isAdminMode
+      ? `/admin/courses/${id}/lessons/${lesson.id}/edit`
+      : `/courses/${id}/lessons/${lesson.id}/edit`;
+    navigate(editPath);
   };
 
   const submitLesson = async (e: React.FormEvent) => {
@@ -159,27 +133,33 @@ export default function CourseEditor() {
     try {
       if (!id || !selectedModuleId) return;
 
-      const lessonData = {
-        ...lessonForm,
-        test: lessonForm.type === "test" ? { questions: testQuestions } : null,
+      const lessonData: Partial<Lesson> = {
+        title: lessonForm.title,
+        type: lessonForm.type,
+        content: "",
+        videoUrl: "",
       };
 
-      if (lessonMode === "create") {
-        if (isAdminMode) {
-          await api.addLessonAsAdmin(id, selectedModuleId, lessonData);
-        } else {
-          await api.addLesson(id, selectedModuleId, lessonData);
-        }
-        toast.success("Урок добавлен");
-      } else {
-        if (!editingLessonId) return;
-        if (isAdminMode) {
-          await api.updateLessonAsAdmin(id, selectedModuleId, editingLessonId, lessonData);
-        } else {
-          await api.updateLesson(id, selectedModuleId, editingLessonId, lessonData);
-        }
-        toast.success("Урок обновлен");
+      if (lessonForm.type === "test") {
+        lessonData.test = {
+          questions: [
+            {
+              id: `q-${Date.now()}`,
+              type: "single",
+              question: "Новый вопрос",
+              options: ["Вариант 1", "Вариант 2"],
+              correctAnswer: 0,
+            },
+          ],
+        };
       }
+
+      if (isAdminMode) {
+        await api.addLessonAsAdmin(id, selectedModuleId, lessonData);
+      } else {
+        await api.addLesson(id, selectedModuleId, lessonData);
+      }
+      toast.success("Урок добавлен");
 
       setLessonDialog(false);
       await loadCourse();
@@ -203,46 +183,6 @@ export default function CourseEditor() {
     } catch (error: any) {
       toast.error(error.message || "Ошибка удаления урока");
     }
-  };
-
-  const addTestQuestion = () => {
-    setTestQuestions([
-      ...testQuestions,
-      {
-        id: `q-${Date.now()}-${Math.random()}`,
-        type: "single",
-        question: "",
-        options: ["", "", "", ""],
-        correctAnswer: 0,
-      },
-    ]);
-  };
-
-  const updateQuestion = (index: number, field: string, value: any) => {
-    const updated = [...testQuestions];
-    if (field === "question") {
-      updated[index] = {
-        ...updated[index],
-        question: applyTextLimit(String(value), LIMITS.questionText, `Текст вопроса ${index + 1}`),
-      };
-    } else {
-      updated[index] = { ...updated[index], [field]: value };
-    }
-    setTestQuestions(updated);
-  };
-
-  const updateQuestionOption = (qIndex: number, oIndex: number, value: string) => {
-    const updated = [...testQuestions];
-    updated[qIndex].options[oIndex] = applyTextLimit(
-      value,
-      LIMITS.questionOption,
-      `Вариант ответа ${oIndex + 1} для вопроса ${qIndex + 1}`
-    );
-    setTestQuestions(updated);
-  };
-
-  const removeQuestion = (index: number) => {
-    setTestQuestions(testQuestions.filter((_, i) => i !== index));
   };
 
   const saveCourse = async () => {
@@ -288,7 +228,7 @@ export default function CourseEditor() {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div className="min-w-0">
-            <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">{course.title}</h1>
+            <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">{courseForm.title || course.title}</h1>
             <p className="text-muted-foreground mt-1">Редактор курса</p>
           </div>
           <Button variant="outline" onClick={() => navigate(`/courses/${id}`)}>
@@ -457,7 +397,7 @@ export default function CourseEditor() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => openEditLesson(module.id, lesson)}
+                                  onClick={() => openEditLesson(lesson)}
                                   className="h-8 w-8"
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -496,10 +436,8 @@ export default function CourseEditor() {
         <Dialog open={lessonDialog} onOpenChange={setLessonDialog}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{lessonMode === "create" ? "Добавить урок" : "Редактировать урок"}</DialogTitle>
-              <DialogDescription>
-                {lessonMode === "create" ? "Создайте новый урок для модуля" : "Обновите содержимое урока"}
-              </DialogDescription>
+              <DialogTitle>Добавить урок</DialogTitle>
+              <DialogDescription>Укажите название и тип урока. Детальная настройка доступна в редакторе урока.</DialogDescription>
             </DialogHeader>
 
             <form onSubmit={submitLesson} className="space-y-4">
@@ -536,117 +474,8 @@ export default function CourseEditor() {
                 </Select>
               </div>
 
-              {lessonForm.type === "text" && (
-                <div className="space-y-2">
-                  <Label htmlFor="lesson-content">Содержание урока</Label>
-                  <Textarea
-                    id="lesson-content"
-                    value={lessonForm.content}
-                    onChange={(e) =>
-                      setLessonForm({
-                        ...lessonForm,
-                        content: applyTextLimit(e.target.value, LIMITS.lessonContent, "Содержание урока"),
-                      })
-                    }
-                    rows={8}
-                    required
-                  />
-                  <CharCounter value={lessonForm.content} max={LIMITS.lessonContent} />
-                </div>
-              )}
-
-              {lessonForm.type === "video" && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="video-url">URL видео (YouTube)</Label>
-                    <Input
-                      id="video-url"
-                      type="url"
-                      value={lessonForm.videoUrl}
-                      onChange={(e) =>
-                        setLessonForm({
-                          ...lessonForm,
-                          videoUrl: applyTextLimit(e.target.value, LIMITS.videoUrl, "URL видео"),
-                        })
-                      }
-                      placeholder="https://www.youtube.com/watch?v=..."
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="video-desc">Описание</Label>
-                    <Textarea
-                      id="video-desc"
-                      value={lessonForm.content}
-                      onChange={(e) =>
-                        setLessonForm({
-                          ...lessonForm,
-                          content: applyTextLimit(e.target.value, LIMITS.lessonContent, "Описание видео"),
-                        })
-                      }
-                      rows={4}
-                    />
-                    <CharCounter value={lessonForm.content} max={LIMITS.lessonContent} />
-                  </div>
-                </>
-              )}
-
-              {lessonForm.type === "test" && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <Label>Вопросы теста</Label>
-                    <Button type="button" onClick={addTestQuestion} size="sm" className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Добавить вопрос
-                    </Button>
-                  </div>
-
-                  {testQuestions.map((q, qIndex) => (
-                    <Card key={q.id}>
-                      <CardHeader className="pb-3">
-                        <div className="flex justify-between items-start gap-2">
-                          <Input
-                            placeholder="Текст вопроса"
-                            value={q.question}
-                            onChange={(e) => updateQuestion(qIndex, "question", e.target.value)}
-                            required
-                          />
-                          <Button type="button" variant="ghost" size="icon" onClick={() => removeQuestion(qIndex)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <CharCounter value={q.question || ""} max={LIMITS.questionText} />
-                        <Label className="text-sm">Варианты ответов</Label>
-                        {q.options.map((opt: string, oIndex: number) => (
-                          <div key={oIndex} className="flex items-center gap-2">
-                            <Input
-                              placeholder={`Вариант ${oIndex + 1}`}
-                              value={opt}
-                              onChange={(e) => updateQuestionOption(qIndex, oIndex, e.target.value)}
-                              required
-                            />
-                            <span className="min-w-[76px] text-right text-xs text-muted-foreground">
-                              {opt.length}/{LIMITS.questionOption}
-                            </span>
-                            <input
-                              type="radio"
-                              name={`correct-${qIndex}`}
-                              checked={q.correctAnswer === oIndex}
-                              onChange={() => updateQuestion(qIndex, "correctAnswer", oIndex)}
-                              className="w-4 h-4 text-primary"
-                            />
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-
               <Button type="submit" className="w-full">
-                {lessonMode === "create" ? "Добавить урок" : "Сохранить изменения"}
+                Добавить урок
               </Button>
             </form>
           </DialogContent>
