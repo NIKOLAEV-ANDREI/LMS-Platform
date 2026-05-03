@@ -621,3 +621,260 @@ Verification:
 - `npm run build` passed
 - Reverted background to solid color only (disabled pattern in `.lms-learning-background`, kept `#f8fafc`) on 2026-05-03.
 - Reinitialized git strictly at project root `C:\Users\an477\OneDrive\Desktop\prompt` and added root `.gitignore` (2026-05-03). Previous parent-level repo at `C:\Users\an477` is no longer used for project operations.
+
+## 37) Student dashboard "My Courses" summary row + profile shortcut (2026-05-03)
+Implemented requested main-page behavior for student role:
+- In `StudentDashboard`, section `Мои курсы` now shows only a compact preview (up to 3 most recent enrolled courses).
+- Added shortcut action near section title:
+  - `Все курсы` with arrow icon
+  - navigates to `/profile` where full enrolled courses list remains available.
+- Recent ordering logic:
+  - builds enrolled list using `user.enrolledCourses` reversed order, then maps ids to course entities.
+
+Updated file:
+- `frontend/src/app/components/dashboards/StudentDashboard.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 38) Profile page student courses grid redesign (2026-05-03)
+- Reworked student profile section to include dedicated block:
+  - `Мои курсы`
+  - subtitle: `Все курсы, на которые вы записаны`
+- Enrolled courses in profile are now displayed as cards in responsive grid:
+  - desktop: 3 cards per row (`lg:grid-cols-3`)
+  - tablet/mobile preserved responsive behavior (`md:grid-cols-2`, `grid-cols-1`)
+- Card style aligned with student dashboard cards:
+  - stable header heights
+  - progress bar + modules count + action button
+  - action button `Просмотреть` / `Продолжить` based on progress
+- Also rewrote `Profile.tsx` in clean UTF-8 to avoid residual encoding/layout artifacts.
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+- Student dashboard: moved profile navigation arrow next to `Мои курсы` title and made only arrow icon clickable (removed full text button) on 2026-05-03.
+- Student dashboard: increased arrow size near section title and adjusted heading line-height for visual vertical centering (2026-05-03).
+- Student dashboard: refined Мои курсы arrow alignment and enlarged icon (h-8 w-8, button h-11 w-11, slight vertical offset) for better centering with title (2026-05-03).
+- Replaced student dashboard section arrow with user-provided SVG (`public/icons/right-arrow.svg`) and wired it in `StudentDashboard.tsx` (2026-05-03).
+- Reduced custom student dashboard arrow SVG size from 28px to 24px (h-6 w-6) on 2026-05-03.
+- Replaced student dashboard arrow asset with user-provided rrow_right_icon_128385.svg (copied to rontend/public/icons/right-arrow.svg) on 2026-05-03.
+- Student dashboard arrow now rendered via SVG mask (/icons/right-arrow.svg) with currentColor; on hover button turns primary and arrow turns white (hover:text-white) on 2026-05-03.
+- Student dashboard: adjusted profile-arrow button to be smaller and rectangular (h-9 w-10 rounded-md) while keeping arrow icon size unchanged (2026-05-03).
+
+## 39) Profile text, password placeholder, avatar menu radius, and RU plurals fixed (2026-05-03)
+Implemented requested UX/text corrections:
+- Profile description changed:
+  - from: `Управление личными данными и аватаркой`
+  - to: `Управление личными данными.`
+- `Новый пароль` placeholder changed to: `Минимум 6 символов`
+  - updated in user profile and admin user-edit page.
+- Avatar action popup rounding reduced to match app style:
+  - `DropdownMenuContent` in `AvatarField` changed from `rounded-2xl` to `rounded-lg`.
+- Replaced incorrect forms like `модуль(ей)`, `урок(ов)`, `студент(ов)` with proper Russian declension by count.
+
+Implementation details:
+- Added utility `frontend/src/app/utils/plural.ts` with:
+  - `getRuNounForm(...)`
+  - `formatRuCount(...)`
+- Integrated plural formatting in:
+  - `frontend/src/app/components/Profile.tsx`
+  - `frontend/src/app/components/courses/CoursePage.tsx`
+  - `frontend/src/app/components/dashboards/StudentDashboard.tsx`
+- Rewrote `frontend/src/app/components/shared/AvatarField.tsx` in clean UTF-8 to remove mojibake in toasts/menu labels and keep Russian strings readable.
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 40) Student dashboard: always show "Доступные курсы" with empty-state banner (2026-05-03)
+Updated student dashboard behavior when user is enrolled in all courses:
+- Section `Доступные курсы` is now always rendered.
+- If no available courses remain, shows an empty-state card styled like other dashboard placeholders:
+  - `Доступных курсов больше нет`
+  - `Вы уже подписались на все курсы`
+- If available courses exist, previous cards grid is shown unchanged.
+
+Updated file:
+- `frontend/src/app/components/dashboards/StudentDashboard.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 41) Student profile: unsubscribe icon on course cards + backend unenroll API (2026-05-03)
+Implemented per-course unsubscribe action in student profile.
+
+Frontend:
+- Added unsubscribe icon button on every student course card in profile (`UserMinus` icon, top-right).
+- Added confirmation before unsubscribe.
+- After successful unsubscribe:
+  - shows success toast
+  - reloads profile data (courses/progress list updates immediately).
+- Added API client method:
+  - `api.unenrollCourse(courseId)` -> `DELETE /courses/{courseId}/enroll`
+  - updates cached local user `enrolledCourses`.
+
+Backend:
+- Added student unenroll endpoint:
+  - `DELETE /api/courses/{courseID}/enroll` (student role required).
+- Added handler method `unenroll`.
+- Added service method `CourseService.Unenroll(...)`.
+- Extended repository contract with `Unenroll(userID, courseID)`.
+- Implemented unenroll in Postgres and SQLite enrollment repositories:
+  - deletes related `lesson_progress`
+  - deletes enrollment row
+  - wrapped in transaction.
+
+Updated files:
+- `frontend/src/app/components/Profile.tsx`
+- `frontend/src/app/utils/api.ts`
+- `backend/internal/handler/http/handler.go`
+- `backend/internal/service/course_service.go`
+- `backend/internal/repository/interfaces.go`
+- `backend/internal/repository/postgres/enrollment_repo.go`
+- `backend/internal/repository/sqlite/enrollment_repo.go`
+
+Verification:
+- `go build ./cmd/server` passed
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 42) Student profile: split active/completed courses, disable unsubscribe for completed (2026-05-03)
+Implemented requested behavior for student profile courses:
+- Student course cards are now split into two sections:
+  - `Мои курсы` (only active courses with progress < 100%)
+  - `Завершенные курсы` (only completed courses with progress = 100%)
+- Unsubscribe icon/action remains only on active course cards.
+- Completed course cards do not show unsubscribe action.
+- Added guard in unsubscribe handler: if course is completed, unsubscribe is blocked with toast message.
+- Empty states added for both sections:
+  - `Нет активных курсов`
+  - `Пока нет завершенных курсов`
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 43) Teacher courses UX: fixed card button alignment + dashboard/profile parity with student flow (2026-05-03)
+Implemented requested teacher-side improvements.
+
+Teacher dashboard (`TeacherDashboard`):
+- Fixed course-card alignment drift:
+  - cards now use stable vertical layout (`flex h-full flex-col`)
+  - title/description have fixed visual blocks (`min-h-*` + clamping)
+  - action area pinned to bottom (`mt-auto`, uniform button heights).
+- Updated `Мои курсы` section behavior to match student pattern:
+  - shows only 3 most recent courses on main dashboard
+  - added arrow button near `Мои курсы` title to navigate to `/profile`
+  - arrow uses same SVG-mask style as student dashboard (`/icons/right-arrow.svg`).
+
+Profile (`Profile`, teacher role):
+- Replaced teacher plain list with responsive cards grid (`1/2/3 columns`).
+- Added full teacher courses display in profile as cards with:
+  - image/title/description/status badge
+  - students/modules/lessons stats
+  - buttons: `Редактировать` and `Просмотр`.
+
+Updated files:
+- `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 44) Teacher profile cards: publish/unpublish controls added (2026-05-03)
+Added missing publish controls on teacher profile course cards:
+- Each teacher course card in profile now shows:
+  - `Опубликовать курс` when status is not approved
+  - `Снять с публикации` when status is approved
+- Actions call existing teacher API methods and reload profile data after completion.
+- Added action lock state (`courseActionId`) to prevent duplicate clicks during request.
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 45) Teacher profile cards: delete course button with confirmation (2026-05-03)
+Added delete action to each teacher course card in profile:
+- New `Удалить курс` button on every teacher card.
+- Action uses confirmation dialog (`AlertDialog`).
+- On confirm:
+  - calls teacher API `removeCourse`
+  - shows toast
+  - reloads profile course list.
+- Uses existing `courseActionId` lock to prevent duplicate requests.
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 46) Teacher profile cards synced to main dashboard card layout (2026-05-03)
+Adjusted teacher profile cards to match teacher dashboard cards visually and structurally.
+
+What was aligned:
+- Delete action moved to top-right icon button (`Trash2`) with confirmation dialog.
+- Card header/body spacing and fixed-height text blocks aligned (`min-h-*`, clamped title/description).
+- Stats block now matches main teacher card structure (`Студенты`, `Модули`).
+- Action buttons match dashboard styling and placement:
+  - `Редактировать` (with `Edit` icon)
+  - `Просмотр`
+  - publish/unpublish full-width action below.
+- Removed extra bottom destructive delete button so profile card layout mirrors main page cards.
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 47) Admin users table: search by name/email + role sorting (2026-05-03)
+Implemented requested user-management table controls on admin dashboard:
+- Added search field for `Имя` and `Email`.
+- Added role sorting selector with options:
+  - `Без сортировки`
+  - `Студент → Учитель → Админ`
+  - `Админ → Учитель → Студент`
+- Added empty-state row: `Пользователи не найдены` when filters return no matches.
+
+Technical note:
+- Rewrote `AdminDashboard.tsx` in clean UTF-8 while preserving existing business logic
+  (tabs active/deleted, role change, delete/restore actions, row navigation).
+
+Updated file:
+- `frontend/src/app/components/dashboards/AdminDashboard.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 48) Admin users table: role-based filtering (students/teachers/admins) (2026-05-03)
+Updated admin users controls per request:
+- Replaced role sorting selector with explicit role filter selector:
+  - `Все роли`
+  - `Только студенты`
+  - `Только учителя`
+  - `Только администраторы`
+- Search by `Имя`/`Email` now works together with selected role filter.
+
+Updated file:
+- `frontend/src/app/components/dashboards/AdminDashboard.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed

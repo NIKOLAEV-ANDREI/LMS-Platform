@@ -16,6 +16,23 @@ func (r *EnrollmentRepo) Enroll(userID, courseID int64) error {
 	return err
 }
 
+func (r *EnrollmentRepo) Unenroll(userID, courseID int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`DELETE FROM lesson_progress WHERE user_id=? AND course_id=?`, userID, courseID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM enrollments WHERE user_id=? AND course_id=?`, userID, courseID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (r *EnrollmentRepo) SetProgress(userID, courseID int64, progress int) error {
 	completed := 0
 	if progress >= 100 {

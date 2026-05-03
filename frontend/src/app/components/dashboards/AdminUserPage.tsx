@@ -211,7 +211,7 @@ export default function AdminUserPage() {
                   id="user-password"
                   type="password"
                   value={form.password}
-                  placeholder="Оставьте пустым (минимум 6 символов)"
+                  placeholder="Минимум 6 символов"
                   minLength={LIMITS.passwordMin}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, password: applyTextLimit(event.target.value, LIMITS.password, "Пароль") }))

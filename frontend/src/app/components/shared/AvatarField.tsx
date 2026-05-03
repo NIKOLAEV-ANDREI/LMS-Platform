@@ -1,4 +1,4 @@
-import { ChangeEvent, useRef, useState } from "react";
+﻿import { ChangeEvent, useRef, useState } from "react";
 import { Camera, User } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
@@ -103,7 +103,7 @@ export default function AvatarField({
                 </span>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56 rounded-2xl p-2">
+            <DropdownMenuContent align="start" className="w-56 rounded-lg p-2">
               <DropdownMenuItem onSelect={openPicker} className="py-2 text-base">
                 Изменить фотографию
               </DropdownMenuItem>

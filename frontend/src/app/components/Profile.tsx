@@ -1,17 +1,29 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Award, BookOpen, Calendar, Mail, TrendingUp } from "lucide-react";
+import { Award, BookOpen, Calendar, Clock, Edit, Mail, Trash2, TrendingUp, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "./Layout";
+import AvatarField from "./shared/AvatarField";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./ui/alert-dialog";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Progress } from "./ui/progress";
-import AvatarField from "./shared/AvatarField";
 import { api, Course, Progress as CourseProgress, User } from "../utils/api";
 import { applyTextLimit, LIMITS } from "../utils/limits";
+import { formatRuCount } from "../utils/plural";
 
 export default function Profile() {
   const [user, setUser] = useState<User | null>(null);
@@ -19,6 +31,8 @@ export default function Profile() {
   const [progress, setProgress] = useState<Record<string, CourseProgress>>({});
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [unenrollingCourseId, setUnenrollingCourseId] = useState<string | null>(null);
+  const [courseActionId, setCourseActionId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
 
   useEffect(() => {
@@ -33,8 +47,14 @@ export default function Profile() {
 
       const { courses: allCourses } = await api.getCourses();
       if (userData.role === "student") {
-        const enrolled = allCourses.filter((course) => userData.enrolledCourses.includes(course.id));
+        const coursesById = new Map(allCourses.map((course) => [course.id, course]));
+        const enrolled = [...userData.enrolledCourses]
+          .reverse()
+          .map((courseId) => coursesById.get(courseId))
+          .filter((course): course is Course => Boolean(course));
+
         setCourses(enrolled);
+
         const nextProgress: Record<string, CourseProgress> = {};
         for (const course of enrolled) {
           const { progress: courseProgress } = await api.getProgress(course.id);
@@ -66,6 +86,7 @@ export default function Profile() {
         email: form.email,
       };
       if (form.password.trim()) payload.password = form.password;
+
       const { user: updatedUser } = await api.updateMyProfile(payload);
       setUser(updatedUser);
       setForm((prev) => ({ ...prev, password: "" }));
@@ -87,11 +108,100 @@ export default function Profile() {
     setUser(updatedUser);
   };
 
+  const handleUnenroll = async (course: Course) => {
+    if (unenrollingCourseId) return;
+    if ((progress[course.id]?.progress || 0) >= 100) {
+      toast.error("Нельзя отписаться от завершенного курса");
+      return;
+    }
+    if (!window.confirm(`Отписаться от курса "${course.title}"?`)) return;
+
+    setUnenrollingCourseId(course.id);
+    try {
+      await api.unenrollCourse(course.id);
+      toast.success("Вы отписались от курса");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Не удалось отписаться от курса");
+    } finally {
+      setUnenrollingCourseId(null);
+    }
+  };
+
+  const handlePublishCourse = async (courseId: string) => {
+    if (courseActionId) return;
+    setCourseActionId(courseId);
+    try {
+      await api.publishCourse(courseId);
+      toast.success("Курс опубликован");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка публикации курса");
+    } finally {
+      setCourseActionId(null);
+    }
+  };
+
+  const handleUnpublishCourse = async (courseId: string) => {
+    if (courseActionId) return;
+    setCourseActionId(courseId);
+    try {
+      await api.unpublishCourse(courseId);
+      toast.success("Курс снят с публикации");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка снятия курса с публикации");
+    } finally {
+      setCourseActionId(null);
+    }
+  };
+
+  const handleDeleteCourse = async (courseId: string) => {
+    if (courseActionId) return;
+    setCourseActionId(courseId);
+    try {
+      await api.removeCourse(courseId);
+      toast.success("Курс удален");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка удаления курса");
+    } finally {
+      setCourseActionId(null);
+    }
+  };
+
   const getRoleBadge = (role: User["role"]) => {
     if (role === "student") return <Badge variant="secondary">Студент</Badge>;
     if (role === "teacher") return <Badge variant="default">Учитель</Badge>;
     return <Badge variant="destructive">Администратор</Badge>;
   };
+
+  const completedCount = Object.values(progress).filter((item) => item.progress === 100).length;
+  const totalTestResults = Object.values(progress).reduce((sum, item) => sum + item.testResults.length, 0);
+  const averageScore =
+    totalTestResults > 0
+      ? Math.round(
+          Object.values(progress).reduce(
+            (sum, item) => sum + item.testResults.reduce((local, result) => local + result.score, 0),
+            0,
+          ) / totalTestResults,
+        )
+      : 0;
+
+  const totalEnrolled = courses.length;
+  const avgProgress = useMemo(() => {
+    if (courses.length === 0) return 0;
+    const total = courses.reduce((sum, course) => sum + (progress[course.id]?.progress || 0), 0);
+    return Math.round(total / courses.length);
+  }, [courses, progress]);
+  const completedCourses = useMemo(
+    () => courses.filter((course) => (progress[course.id]?.progress || 0) === 100),
+    [courses, progress],
+  );
+  const activeCourses = useMemo(
+    () => courses.filter((course) => (progress[course.id]?.progress || 0) < 100),
+    [courses, progress],
+  );
 
   if (loading) {
     return (
@@ -111,25 +221,13 @@ export default function Profile() {
     );
   }
 
-  const completedCount = Object.values(progress).filter((item) => item.progress === 100).length;
-  const totalTestResults = Object.values(progress).reduce((sum, item) => sum + item.testResults.length, 0);
-  const averageScore =
-    totalTestResults > 0
-      ? Math.round(
-          Object.values(progress).reduce(
-            (sum, item) => sum + item.testResults.reduce((local, result) => local + result.score, 0),
-            0
-          ) / totalTestResults
-        )
-      : 0;
-
   return (
     <Layout>
       <div className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Профиль пользователя</CardTitle>
-            <CardDescription>Управление личными данными и аватаркой</CardDescription>
+            <CardDescription>Управление личными данными.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-col gap-6 md:flex-row md:items-start">
@@ -170,7 +268,8 @@ export default function Profile() {
                     setForm((prev) => ({ ...prev, name: applyTextLimit(event.target.value, LIMITS.userName, "Имя") }))
                   }
                 />
-</div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="profile-email">Email</Label>
                 <Input
@@ -181,20 +280,21 @@ export default function Profile() {
                     setForm((prev) => ({ ...prev, email: applyTextLimit(event.target.value, LIMITS.email, "Email") }))
                   }
                 />
-</div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="profile-password">Новый пароль</Label>
                 <Input
                   id="profile-password"
                   type="password"
-                  placeholder="Оставьте пустым (минимум 6 символов)"
+                  placeholder="Минимум 6 символов"
                   minLength={LIMITS.passwordMin}
                   value={form.password}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, password: applyTextLimit(event.target.value, LIMITS.password, "Пароль") }))
                   }
                 />
-</div>
+              </div>
             </div>
 
             <Button onClick={saveProfile} disabled={savingProfile}>
@@ -212,7 +312,7 @@ export default function Profile() {
                   <BookOpen className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{courses.length}</div>
+                  <div className="text-2xl font-bold">{totalEnrolled}</div>
                 </CardContent>
               </Card>
 
@@ -228,83 +328,240 @@ export default function Profile() {
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium">Средний балл</CardTitle>
+                  <CardTitle className="text-sm font-medium">Средний прогресс</CardTitle>
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{avgProgress}%</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="space-y-8">
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-2xl font-semibold">Мои курсы</h2>
+                  <p className="text-sm text-muted-foreground">Курсы, которые вы проходите сейчас</p>
+                </div>
+
+                {activeCourses.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
+                      <p className="text-muted-foreground">Нет активных курсов</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {activeCourses.map((course) => {
+                      const courseProgress = progress[course.id];
+                      return (
+                        <Card key={course.id} className="relative flex h-full flex-col transition-shadow hover:shadow-lg">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleUnenroll(course)}
+                            disabled={Boolean(unenrollingCourseId)}
+                            className="absolute top-3 right-3 z-10 h-8 w-8 text-muted-foreground hover:text-destructive"
+                            title="Отписаться от курса"
+                            aria-label={`Отписаться от курса ${course.title}`}
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                          <CardHeader className="min-w-0 pb-4">
+                            {course.imageUrl && (
+                              <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
+                                <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
+                              </div>
+                            )}
+
+                            <CardTitle
+                              className="line-clamp-1 min-h-7 text-lg leading-tight break-words [overflow-wrap:anywhere]"
+                              title={course.title}
+                            >
+                              {course.title}
+                            </CardTitle>
+                            <CardDescription
+                              className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                              title={course.description}
+                            >
+                              {course.description}
+                            </CardDescription>
+                          </CardHeader>
+
+                          <CardContent className="mt-auto flex flex-1 flex-col justify-end gap-4">
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Прогресс</span>
+                                <span className="font-medium">{courseProgress?.progress || 0}%</span>
+                              </div>
+                              <Progress value={courseProgress?.progress || 0} />
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
+                            </div>
+
+                            <Link to={`/courses/${course.id}`} className="block">
+                              <Button className="w-full">Продолжить</Button>
+                            </Link>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-2xl font-semibold">Завершенные курсы</h2>
+                  <p className="text-sm text-muted-foreground">Курсы, которые вы прошли полностью</p>
+                </div>
+
+                {completedCourses.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <Award className="mb-4 h-12 w-12 text-muted-foreground" />
+                      <p className="text-muted-foreground">Пока нет завершенных курсов</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {completedCourses.map((course) => {
+                      const courseProgress = progress[course.id];
+                      return (
+                        <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
+                          <CardHeader className="min-w-0 pb-4">
+                            {course.imageUrl && (
+                              <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
+                                <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
+                              </div>
+                            )}
+
+                            <CardTitle
+                              className="line-clamp-1 min-h-7 text-lg leading-tight break-words [overflow-wrap:anywhere]"
+                              title={course.title}
+                            >
+                              {course.title}
+                            </CardTitle>
+                            <CardDescription
+                              className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                              title={course.description}
+                            >
+                              {course.description}
+                            </CardDescription>
+                          </CardHeader>
+
+                          <CardContent className="mt-auto flex flex-1 flex-col justify-end gap-4">
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Прогресс</span>
+                                <span className="font-medium">{courseProgress?.progress || 0}%</span>
+                              </div>
+                              <Progress value={courseProgress?.progress || 0} />
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
+                            </div>
+
+                            <Link to={`/courses/${course.id}`} className="block">
+                              <Button className="w-full">Просмотреть</Button>
+                            </Link>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {totalTestResults > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Средний балл по тестам</CardTitle>
+                  <CardDescription>Результаты по всем пройденным тестам</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{averageScore}%</div>
                 </CardContent>
               </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Мой прогресс</CardTitle>
-                <CardDescription>Статистика по всем курсам</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {courses.length === 0 ? (
-                  <div className="py-8 text-center text-muted-foreground">Вы еще не записались ни на один курс</div>
-                ) : (
-                  <div className="space-y-4">
-                    {courses.map((course) => {
-                      const courseProgress = progress[course.id];
-                      return (
-                        <div key={course.id} className="space-y-3 rounded-lg border p-4">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <Link to={`/courses/${course.id}`} className="font-semibold hover:text-primary">
-                                {course.title}
-                              </Link>
-                              <p className="text-sm text-muted-foreground">{course.teacherName}</p>
-                            </div>
-                            <Badge variant={courseProgress?.progress === 100 ? "default" : "secondary"}>
-                              {courseProgress?.progress === 100 ? "Завершен" : "В процессе"}
-                            </Badge>
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Прогресс</span>
-                              <span className="font-medium">{courseProgress?.progress || 0}%</span>
-                            </div>
-                            <Progress value={courseProgress?.progress || 0} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            )}
           </>
         )}
 
         {user.role === "teacher" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Мои курсы</CardTitle>
-              <CardDescription>Курсы, которые вы преподаете</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {courses.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">У вас пока нет созданных курсов</div>
-              ) : (
-                <div className="space-y-4">
-                  {courses.map((course) => (
-                    <div key={course.id} className="rounded-lg border p-4">
-                      <div className="mb-3 flex items-start justify-between">
-                        <div>
-                          <Link to={`/courses/${course.id}`} className="font-semibold hover:text-primary">
-                            {course.title}
-                          </Link>
-                          <p className="line-clamp-1 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                            {course.description}
-                          </p>
-                        </div>
+          <div>
+            <div className="mb-4">
+              <h2 className="text-2xl font-semibold">Мои курсы</h2>
+              <p className="text-sm text-muted-foreground">Все курсы, которые вы преподаете</p>
+            </div>
+
+            {courses.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <p className="text-muted-foreground">У вас пока нет созданных курсов</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {courses.map((course) => (
+                  <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
+                    <CardHeader className="min-w-0 pb-4">
+                      <div className="flex justify-end">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Удалить курс?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Курс, его модули и уроки будут удалены без возможности восстановления.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Отмена</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDeleteCourse(course.id)}>Удалить</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4 text-sm">
+                      {course.imageUrl && (
+                        <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
+                          <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
+                        </div>
+                      )}
+
+                      <CardTitle
+                        className="line-clamp-1 min-h-7 text-lg leading-tight break-words [overflow-wrap:anywhere]"
+                        title={course.title}
+                      >
+                        {course.title}
+                      </CardTitle>
+                      <CardDescription
+                        className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                        title={course.description}
+                      >
+                        {course.description}
+                      </CardDescription>
+
+                      <div>
+                        {course.status === "approved" ? <Badge>Опубликован</Badge> : <Badge variant="secondary">Черновик</Badge>}
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="mt-auto flex flex-1 flex-col justify-end gap-4">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <div className="text-muted-foreground">Студенты</div>
                           <div className="font-medium">{course.enrolledStudents.length}</div>
@@ -313,24 +570,47 @@ export default function Profile() {
                           <div className="text-muted-foreground">Модули</div>
                           <div className="font-medium">{course.modules.length}</div>
                         </div>
-                        <div>
-                          <div className="text-muted-foreground">Уроки</div>
-                          <div className="font-medium">
-                            {course.modules.reduce((sum, module) => sum + module.lessons.length, 0)}
-                          </div>
-                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+
+                      <div className="flex gap-2">
+                        <Link to={`/courses/${course.id}/edit`} className="flex-1">
+                          <Button variant="outline" className="h-11 w-full gap-2">
+                            <Edit className="h-4 w-4" />
+                            Редактировать
+                          </Button>
+                        </Link>
+                        <Link to={`/courses/${course.id}`} className="flex-1">
+                          <Button className="h-11 w-full">Просмотр</Button>
+                        </Link>
+                      </div>
+
+                      {course.status === "approved" ? (
+                        <Button
+                          variant="secondary"
+                          className="h-11 w-full"
+                          onClick={() => handleUnpublishCourse(course.id)}
+                          disabled={Boolean(courseActionId)}
+                        >
+                          Снять с публикации
+                        </Button>
+                      ) : (
+                        <Button
+                          className="h-11 w-full"
+                          onClick={() => handlePublishCourse(course.id)}
+                          disabled={Boolean(courseActionId)}
+                        >
+                          Опубликовать курс
+                        </Button>
+                      )}
+
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </Layout>
   );
 }
-
-
-

@@ -38,6 +38,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.Get("/courses", h.listCourses)
 			p.Get("/courses/{courseID}", h.courseByID)
 			p.Post("/courses/{courseID}/enroll", h.enroll)
+			p.With(middleware.RequireRole(domain.RoleStudent)).Delete("/courses/{courseID}/enroll", h.unenroll)
 			p.Patch("/courses/{courseID}/progress", h.updateProgress)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Get("/progress/{courseID}", h.getProgress)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/complete", h.completeLesson)
@@ -346,6 +347,20 @@ func (h *Handler) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "enrolled"})
+}
+
+func (h *Handler) unenroll(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	if err := h.course.Unenroll(uid, courseID); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "unenrolled"})
 }
 
 func (h *Handler) updateProgress(w http.ResponseWriter, r *http.Request) {

@@ -35,6 +35,7 @@ type CourseRepository interface {
 
 type EnrollmentRepository interface {
 	Enroll(userID, courseID int64) error
+	Unenroll(userID, courseID int64) error
 	SetProgress(userID, courseID int64, progress int) error
 	ListByStudent(userID int64) ([]domain.Enrollment, error)
 	CompleteLesson(userID, courseID, lessonID int64) (*domain.CourseProgress, error)

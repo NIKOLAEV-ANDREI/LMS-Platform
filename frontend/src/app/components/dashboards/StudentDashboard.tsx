@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
 import { api, Course, Progress as CourseProgress, User } from "../../utils/api";
+import { formatRuCount } from "../../utils/plural";
 
 export default function StudentDashboard() {
   const [user, setUser] = useState<User | null>(null);
@@ -25,7 +26,11 @@ export default function StudentDashboard() {
       setUser(userData);
 
       const { courses: allCourses } = await api.getCourses();
-      const enrolled = allCourses.filter((course) => userData.enrolledCourses.includes(course.id));
+      const coursesById = new Map(allCourses.map((course) => [course.id, course]));
+      const enrolled = [...userData.enrolledCourses]
+        .reverse()
+        .map((courseId) => coursesById.get(courseId))
+        .filter((course): course is Course => Boolean(course));
       const available = allCourses.filter((course) => !userData.enrolledCourses.includes(course.id));
 
       setEnrolledCourses(enrolled);
@@ -71,6 +76,7 @@ export default function StudentDashboard() {
     enrolledCourses.length > 0
       ? Math.round(Object.values(progress).reduce((sum, item) => sum + (item?.progress || 0), 0) / enrolledCourses.length)
       : 0;
+  const recentEnrolledCourses = enrolledCourses.slice(0, 3);
 
   return (
     <Layout>
@@ -113,7 +119,31 @@ export default function StudentDashboard() {
         </div>
 
         <div>
-          <h2 className="mb-4 text-2xl font-semibold">Мои курсы</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <h2 className="text-2xl font-semibold leading-tight">Мои курсы</h2>
+            <Link to="/profile" aria-label="Перейти к моим курсам в профиле">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative top-px h-9 w-10 rounded-md text-foreground hover:bg-primary hover:text-white"
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-6 w-6 bg-current"
+                  style={{
+                    WebkitMaskImage: "url('/icons/right-arrow.svg')",
+                    maskImage: "url('/icons/right-arrow.svg')",
+                    WebkitMaskRepeat: "no-repeat",
+                    maskRepeat: "no-repeat",
+                    WebkitMaskPosition: "center",
+                    maskPosition: "center",
+                    WebkitMaskSize: "contain",
+                    maskSize: "contain",
+                  }}
+                />
+              </Button>
+            </Link>
+          </div>
           {enrolledCourses.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -124,7 +154,7 @@ export default function StudentDashboard() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {enrolledCourses.map((course) => {
+              {recentEnrolledCourses.map((course) => {
                 const courseProgress = progress[course.id];
                 return (
                   <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
@@ -160,7 +190,7 @@ export default function StudentDashboard() {
 
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Clock className="h-4 w-4" />
-                        <span>{course.modules.length} модуль(ей)</span>
+                        <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
                       </div>
 
                       <Link to={`/courses/${course.id}`} className="block">
@@ -174,9 +204,17 @@ export default function StudentDashboard() {
           )}
         </div>
 
-        {availableCourses.length > 0 && (
-          <div>
-            <h2 className="mb-4 text-2xl font-semibold">Доступные курсы</h2>
+        <div>
+          <h2 className="mb-4 text-2xl font-semibold">Доступные курсы</h2>
+          {availableCourses.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
+                <p className="text-muted-foreground">Доступных курсов больше нет</p>
+                <p className="mt-1 text-sm text-muted-foreground">Вы уже подписались на все курсы</p>
+              </CardContent>
+            </Card>
+          ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {availableCourses.map((course) => (
                 <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
@@ -211,7 +249,7 @@ export default function StudentDashboard() {
 
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Clock className="h-4 w-4" />
-                      <span>{course.modules.length} модуль(ей)</span>
+                      <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
                     </div>
 
                     <div className="flex gap-2">
@@ -228,8 +266,8 @@ export default function StudentDashboard() {
                 </Card>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </Layout>
   );

@@ -55,6 +55,10 @@ func (s *CourseService) Enroll(studentID, courseID int64) error {
 	return s.enrollments.Enroll(studentID, courseID)
 }
 
+func (s *CourseService) Unenroll(studentID, courseID int64) error {
+	return s.enrollments.Unenroll(studentID, courseID)
+}
+
 func (s *CourseService) UpdateProgress(studentID, courseID int64, progress int) error {
 	if progress < 0 || progress > 100 {
 		return errors.New("progress must be 0..100")

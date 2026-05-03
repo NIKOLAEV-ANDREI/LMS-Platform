@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
 import { api, Course, Progress as CourseProgress, User } from "../../utils/api";
+import { formatRuCount } from "../../utils/plural";
 
 type CoursePageLocationState = {
   openModuleId?: string;
@@ -128,15 +129,15 @@ export default function CoursePage() {
           <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <BookOpen className="h-4 w-4" />
-              <span>{course.modules.length} модуль(ей)</span>
+              <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
             </div>
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
-              <span>{totalLessons} урок(ов)</span>
+              <span>{formatRuCount(totalLessons, "урок", "урока", "уроков")}</span>
             </div>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              <span>{course.enrolledStudents.length} студент(ов)</span>
+              <span>{formatRuCount(course.enrolledStudents.length, "студент", "студента", "студентов")}</span>
             </div>
           </div>
 

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { BookOpen, Edit, Plus, Trash2, TrendingUp, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -97,6 +97,16 @@ export default function TeacherDashboard() {
     }
   };
 
+  const recentCourses = useMemo(
+    () =>
+      [...courses]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 3),
+    [courses],
+  );
+  const totalStudents = courses.reduce((sum, course) => sum + course.enrolledStudents.length, 0);
+  const totalModules = courses.reduce((sum, course) => sum + course.modules.length, 0);
+
   if (loading) {
     return (
       <Layout>
@@ -106,9 +116,6 @@ export default function TeacherDashboard() {
       </Layout>
     );
   }
-
-  const totalStudents = courses.reduce((sum, course) => sum + course.enrolledStudents.length, 0);
-  const totalModules = courses.reduce((sum, course) => sum + course.modules.length, 0);
 
   return (
     <Layout>
@@ -222,7 +229,31 @@ export default function TeacherDashboard() {
         </div>
 
         <div>
-          <h2 className="mb-4 text-2xl font-semibold">Мои курсы</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <h2 className="text-2xl font-semibold leading-tight">Мои курсы</h2>
+            <Link to="/profile" aria-label="Перейти к моим курсам в профиле">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative top-px h-9 w-10 rounded-md text-foreground hover:bg-primary hover:text-white"
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-6 w-6 bg-current"
+                  style={{
+                    WebkitMaskImage: "url('/icons/right-arrow.svg')",
+                    maskImage: "url('/icons/right-arrow.svg')",
+                    WebkitMaskRepeat: "no-repeat",
+                    maskRepeat: "no-repeat",
+                    WebkitMaskPosition: "center",
+                    maskPosition: "center",
+                    WebkitMaskSize: "contain",
+                    maskSize: "contain",
+                  }}
+                />
+              </Button>
+            </Link>
+          </div>
           {courses.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -233,9 +264,9 @@ export default function TeacherDashboard() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {courses.map((course) => (
-                <Card key={course.id} className="transition-shadow hover:shadow-lg">
-                  <CardHeader className="min-w-0">
+              {recentCourses.map((course) => (
+                <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
+                  <CardHeader className="min-w-0 pb-4">
                     <div className="flex justify-end">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -265,13 +296,13 @@ export default function TeacherDashboard() {
                     )}
 
                     <CardTitle
-                      className="line-clamp-1 text-lg leading-tight break-words [overflow-wrap:anywhere]"
+                      className="line-clamp-1 min-h-7 text-lg leading-tight break-words [overflow-wrap:anywhere]"
                       title={course.title}
                     >
                       {course.title}
                     </CardTitle>
                     <CardDescription
-                      className="line-clamp-2 break-words [overflow-wrap:anywhere]"
+                      className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
                       title={course.description}
                     >
                       {course.description}
@@ -282,7 +313,7 @@ export default function TeacherDashboard() {
                     </div>
                   </CardHeader>
 
-                  <CardContent className="space-y-4">
+                  <CardContent className="mt-auto flex flex-1 flex-col justify-end gap-4">
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <div className="text-muted-foreground">Студенты</div>
@@ -296,20 +327,20 @@ export default function TeacherDashboard() {
 
                     <div className="flex gap-2">
                       <Link to={`/courses/${course.id}/edit`} className="flex-1">
-                        <Button variant="outline" className="w-full gap-2">
+                        <Button variant="outline" className="h-11 w-full gap-2">
                           <Edit className="h-4 w-4" />
                           Редактировать
                         </Button>
                       </Link>
                       <Link to={`/courses/${course.id}`} className="flex-1">
-                        <Button className="w-full">Просмотр</Button>
+                        <Button className="h-11 w-full">Просмотр</Button>
                       </Link>
                     </div>
 
                     {course.status !== "approved" && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button className="w-full">Опубликовать курс</Button>
+                          <Button className="h-11 w-full">Опубликовать курс</Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
@@ -329,7 +360,7 @@ export default function TeacherDashboard() {
                     {course.status === "approved" && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="secondary" className="w-full">
+                          <Button variant="secondary" className="h-11 w-full">
                             Снять с публикации
                           </Button>
                         </AlertDialogTrigger>

@@ -383,6 +383,20 @@ class API {
     return { success: true };
   }
 
+  async unenrollCourse(id: string) {
+    await this.request(`/courses/${id}/enroll`, {
+      method: 'DELETE',
+    });
+
+    const user = this.readUser();
+    if (user && user.enrolledCourses.includes(String(id))) {
+      const nextUser = { ...user, enrolledCourses: user.enrolledCourses.filter((courseId) => courseId !== String(id)) };
+      this.saveUser(nextUser);
+    }
+
+    return { success: true };
+  }
+
   async addModule(courseId: string, title: string, description: string) {
     const module = await this.request(`/teacher/courses/${courseId}/modules`, {
       method: 'POST',
