@@ -20,6 +20,9 @@ export const LIMITS = {
   videoUrl: 2048,
   lessonAttachmentsMaxCount: 5,
   lessonAttachmentMaxSize: 15 * 1024 * 1024,
+  lessonSubmissionMaxSize: 20 * 1024 * 1024,
+  lessonSubmissionNote: 1500,
+  lessonReviewNote: 2000,
 
   questionText: 500,
   questionOption: 200,

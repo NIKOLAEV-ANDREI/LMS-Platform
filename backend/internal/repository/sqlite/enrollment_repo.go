@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"lms-backend/internal/domain"
 )
 
@@ -61,4 +62,32 @@ func (r *EnrollmentRepo) ListByStudent(userID int64) ([]domain.Enrollment, error
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func (r *EnrollmentRepo) CompleteLesson(userID, courseID, lessonID int64) (*domain.CourseProgress, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) GetCourseProgress(userID, courseID int64) (*domain.CourseProgress, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) SubmitLessonWork(studentID, courseID, lessonID int64, fileName, fileURL, studentNote string) (*domain.LessonSubmission, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ListTeacherCourseSubmissions(teacherID, courseID int64, status domain.LessonSubmissionStatus) ([]domain.LessonSubmission, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ListStudentCourseSubmissions(studentID, courseID int64) ([]domain.LessonSubmission, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) GetTeacherCourseSubmissionByID(teacherID, courseID, submissionID int64) (*domain.LessonSubmission, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID int64, status domain.LessonSubmissionStatus, reviewNote string) (*domain.LessonSubmission, error) {
+	return nil, errors.New("not implemented")
 }

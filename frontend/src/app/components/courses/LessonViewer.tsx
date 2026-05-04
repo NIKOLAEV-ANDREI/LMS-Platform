@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Award, CheckCircle, Download, Paperclip, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
@@ -8,7 +8,9 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Label } from "../ui/label";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
-import { api, Course, Lesson } from "../../utils/api";
+import { Textarea } from "../ui/textarea";
+import { api, Course, Lesson, LessonSubmission, User } from "../../utils/api";
+import { LIMITS } from "../../utils/limits";
 import { sanitizeRichText } from "../../utils/richText";
 
 export default function LessonViewer() {
@@ -17,12 +19,18 @@ export default function LessonViewer() {
 
   const [course, setCourse] = useState<Course | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [parentModuleId, setParentModuleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [testAnswers, setTestAnswers] = useState<(number | null)[]>([]);
   const [testSubmitted, setTestSubmitted] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [submission, setSubmission] = useState<LessonSubmission | null>(null);
+  const [submissionNote, setSubmissionNote] = useState("");
+  const [submissionFileName, setSubmissionFileName] = useState("");
+  const [submissionFileUrl, setSubmissionFileUrl] = useState("");
+  const [submittingWork, setSubmittingWork] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -32,6 +40,8 @@ export default function LessonViewer() {
     try {
       if (!courseId || !lessonId) return;
 
+      const { user: userData } = await api.getSession();
+      setUser(userData);
       const { course: courseData } = await api.getCourse(courseId);
       setCourse(courseData);
 
@@ -55,9 +65,18 @@ export default function LessonViewer() {
 
       setParentModuleId(foundModuleId);
       setLesson(foundLesson);
+      setSubmission(null);
+      setSubmissionNote("");
+      setSubmissionFileName("");
+      setSubmissionFileUrl("");
 
       if (foundLesson.test) {
         setTestAnswers(new Array(foundLesson.test.questions.length).fill(null));
+      }
+      if (userData.role === "student" && userData.enrolledCourses.includes(courseId)) {
+        const { submissions } = await api.getMyCourseSubmissions(courseId);
+        const current = submissions.find((item) => item.lessonId === lessonId) || null;
+        setSubmission(current);
       }
     } catch (error: any) {
       toast.error(error.message || "Ошибка загрузки урока");
@@ -99,6 +118,63 @@ export default function LessonViewer() {
       }
     } catch (error: any) {
       toast.error(error.message || "Ошибка отправки теста");
+    }
+  };
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      reader.readAsDataURL(file);
+    });
+
+  const handleSubmissionFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (file.size > LIMITS.lessonSubmissionMaxSize) {
+      toast.error(`Файл не должен превышать ${(LIMITS.lessonSubmissionMaxSize / (1024 * 1024)).toFixed(0)} МБ`);
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setSubmissionFileName(file.name);
+      setSubmissionFileUrl(dataUrl);
+    } catch (error: any) {
+      toast.error(error?.message || "Не удалось подготовить файл");
+    }
+  };
+
+  const handleSubmitWorkForReview = async () => {
+    if (!courseId || !lessonId) return;
+    if (!submissionFileName || !submissionFileUrl) {
+      toast.error("Выберите файл с выполненной работой");
+      return;
+    }
+    if (submissionNote.length > LIMITS.lessonSubmissionNote) {
+      toast.error(`Комментарий не должен превышать ${LIMITS.lessonSubmissionNote} символов`);
+      return;
+    }
+
+    setSubmittingWork(true);
+    try {
+      const { submission: created } = await api.submitLessonForReview(courseId, lessonId, {
+        fileName: submissionFileName,
+        fileUrl: submissionFileUrl,
+        studentNote: submissionNote,
+      });
+      setSubmission(created);
+      setSubmissionFileName("");
+      setSubmissionFileUrl("");
+      setSubmissionNote("");
+      toast.success("Работа отправлена преподавателю на проверку");
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка отправки работы");
+    } finally {
+      setSubmittingWork(false);
     }
   };
 
@@ -221,6 +297,13 @@ export default function LessonViewer() {
   const hasRichMarkup = /<\/?[a-z][\s\S]*>/i.test(renderedContent);
   const videoEmbedUrl = lesson.type === "video" && lesson.videoUrl ? getVideoEmbedUrl(lesson.videoUrl) : "";
   const lessonAttachments = Array.isArray(lesson.attachments) ? lesson.attachments : [];
+  const isStudent = user?.role === "student";
+  const isStudentEnrolled = Boolean(isStudent && courseId && user?.enrolledCourses.includes(courseId));
+  const requiresReview = Boolean(lesson.requiresReview && (lesson.type === "text" || lesson.type === "video"));
+  const canSubmitWork = isStudentEnrolled && requiresReview;
+  const submissionRejected = submission?.status === "rejected";
+  const submissionPending = submission?.status === "pending";
+  const submissionApproved = submission?.status === "approved";
 
   return (
     <Layout>
@@ -479,16 +562,83 @@ export default function LessonViewer() {
               </div>
             )}
 
+            {canSubmitWork && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Отправка работы преподавателю</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {submission && (
+                    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Статус:</span>
+                        {submissionPending && <Badge variant="secondary">На проверке</Badge>}
+                        {submissionApproved && <Badge className="bg-green-600">Принято</Badge>}
+                        {submissionRejected && <Badge variant="destructive">Отклонено</Badge>}
+                      </div>
+                      <a href={submission.fileUrl} download={submission.fileName} target="_blank" rel="noreferrer" className="inline-block">
+                        <Button variant="outline" size="sm" className="gap-2">
+                          <Download className="h-4 w-4" />
+                          {submission.fileName}
+                        </Button>
+                      </a>
+                      {submission.studentNote && (
+                        <p className="text-sm break-words [overflow-wrap:anywhere]">Ваш комментарий: {submission.studentNote}</p>
+                      )}
+                      {submission.reviewNote && (
+                        <p className="text-sm text-destructive break-words [overflow-wrap:anywhere]">
+                          Комментарий преподавателя: {submission.reviewNote}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!submissionPending && !submissionApproved && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="submission-file">Файл выполненной работы</Label>
+                        <input id="submission-file" type="file" onChange={handleSubmissionFileChange} className="hidden" />
+                        <label
+                          htmlFor="submission-file"
+                          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium transition-colors hover:border-primary hover:bg-primary/5"
+                        >
+                          Выберите файл
+                        </label>
+                        {submissionFileName && <p className="text-sm text-muted-foreground">Выбран файл: {submissionFileName}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="submission-note">Комментарий (необязательно)</Label>
+                        <Textarea
+                          id="submission-note"
+                          value={submissionNote}
+                          onChange={(event) => setSubmissionNote(event.target.value.slice(0, LIMITS.lessonSubmissionNote))}
+                          rows={3}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {submissionNote.length}/{LIMITS.lessonSubmissionNote}
+                        </p>
+                      </div>
+                      <Button onClick={handleSubmitWorkForReview} disabled={submittingWork}>
+                        {submittingWork ? "Отправка..." : submissionRejected ? "Отправить повторно" : "Отправить на проверку"}
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {lesson.type !== "test" && (
               <div className="flex items-center justify-between border-t pt-6">
                 <Button variant="outline" className="gap-2" onClick={goBackToCourse}>
                   <ArrowLeft className="h-4 w-4" />К содержанию
                 </Button>
 
-                <Button onClick={handleCompleteLesson} className="gap-2">
-                  Завершить урок
-                  <CheckCircle className="h-4 w-4" />
-                </Button>
+                {isStudentEnrolled && !canSubmitWork && (
+                  <Button onClick={handleCompleteLesson} className="gap-2">
+                    Завершить урок
+                    <CheckCircle className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>

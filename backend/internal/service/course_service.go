@@ -130,6 +130,99 @@ func (s *CourseService) GetCourseProgress(studentID, courseID int64) (*domain.Co
 	return s.enrollments.GetCourseProgress(studentID, courseID)
 }
 
+func (s *CourseService) SubmitLessonForReview(studentID, courseID, lessonID int64, fileName, fileURL, studentNote string) (*domain.LessonSubmission, error) {
+	fileName = strings.TrimSpace(fileName)
+	fileURL = strings.TrimSpace(fileURL)
+	studentNote = strings.TrimSpace(studentNote)
+	if err := validateLessonSubmissionPayload(fileName, fileURL, studentNote); err != nil {
+		return nil, err
+	}
+
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, err
+	}
+	if course == nil {
+		return nil, errors.New("course not found")
+	}
+	var lesson *domain.Lesson
+	for moduleIndex := range course.Modules {
+		for lessonIndex := range course.Modules[moduleIndex].Lessons {
+			if course.Modules[moduleIndex].Lessons[lessonIndex].ID == lessonID {
+				lesson = &course.Modules[moduleIndex].Lessons[lessonIndex]
+				break
+			}
+		}
+		if lesson != nil {
+			break
+		}
+	}
+	if lesson == nil {
+		return nil, errors.New("lesson not found in this course")
+	}
+	if !lesson.RequiresReview {
+		return nil, errors.New("lesson does not require review submission")
+	}
+	return s.enrollments.SubmitLessonWork(studentID, courseID, lessonID, fileName, fileURL, studentNote)
+}
+
+func (s *CourseService) StudentCourseSubmissions(studentID, courseID int64) ([]domain.LessonSubmission, error) {
+	return s.enrollments.ListStudentCourseSubmissions(studentID, courseID)
+}
+
+func (s *CourseService) TeacherCourseSubmissions(teacherID, courseID int64, status string) ([]domain.LessonSubmission, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	var submissionStatus domain.LessonSubmissionStatus
+	switch status {
+	case "", "all":
+		submissionStatus = ""
+	case string(domain.LessonSubmissionPending):
+		submissionStatus = domain.LessonSubmissionPending
+	case string(domain.LessonSubmissionApproved):
+		submissionStatus = domain.LessonSubmissionApproved
+	case string(domain.LessonSubmissionRejected):
+		submissionStatus = domain.LessonSubmissionRejected
+	default:
+		return nil, errors.New("invalid submission status")
+	}
+	return s.enrollments.ListTeacherCourseSubmissions(teacherID, courseID, submissionStatus)
+}
+
+func (s *CourseService) ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID int64, approve bool, reviewNote string) (*domain.LessonSubmission, *domain.CourseProgress, error) {
+	reviewNote = strings.TrimSpace(reviewNote)
+	if err := validateTeacherReviewNote(reviewNote); err != nil {
+		return nil, nil, err
+	}
+
+	submission, err := s.enrollments.GetTeacherCourseSubmissionByID(teacherID, courseID, submissionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if submission == nil {
+		return nil, nil, errors.New("submission not found")
+	}
+	if submission.Status != domain.LessonSubmissionPending {
+		return nil, nil, errors.New("submission is already reviewed")
+	}
+
+	nextStatus := domain.LessonSubmissionRejected
+	var progress *domain.CourseProgress
+	if approve {
+		nextStatus = domain.LessonSubmissionApproved
+		progress, err = s.enrollments.CompleteLesson(submission.StudentID, courseID, submission.LessonID)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	updatedSubmission, err := s.enrollments.ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID, nextStatus, reviewNote)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return updatedSubmission, progress, nil
+}
+
 func (s *CourseService) PublishByTeacher(teacherID, courseID int64) error {
 	course, err := s.courses.ByID(courseID)
 	if err != nil {
@@ -396,7 +489,7 @@ func (s *CourseService) AddModuleByAdmin(courseID int64, title, description stri
 	return module, nil
 }
 
-func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID int64, title, content, lessonType, videoURL string, requiresReview bool, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -409,6 +502,9 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		requiresReview = false
 	}
 	if err := validateLessonAttachments(lessonType, attachments); err != nil {
 		return nil, err
@@ -447,6 +543,7 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 		Content:     content,
 		Type:        lessonType,
 		VideoURL:    videoURL,
+		RequiresReview: requiresReview,
 		Attachments: attachments,
 		Test:        test,
 	}
@@ -456,7 +553,7 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 	return lesson, nil
 }
 
-func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, content, lessonType, videoURL string, requiresReview bool, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -469,6 +566,9 @@ func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, conten
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		requiresReview = false
 	}
 	if err := validateLessonAttachments(lessonType, attachments); err != nil {
 		return nil, err
@@ -504,6 +604,7 @@ func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, conten
 		Content:     content,
 		Type:        lessonType,
 		VideoURL:    videoURL,
+		RequiresReview: requiresReview,
 		Attachments: attachments,
 		Test:        test,
 	}
@@ -641,7 +742,7 @@ func (s *CourseService) DeleteModuleByAdmin(courseID, moduleID int64) error {
 	return s.courses.DeleteModule(moduleID)
 }
 
-func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, requiresReview bool, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -654,6 +755,9 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		requiresReview = false
 	}
 	if err := validateLessonAttachments(lessonType, attachments); err != nil {
 		return nil, err
@@ -704,6 +808,7 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 		Content:     content,
 		Type:        lessonType,
 		VideoURL:    videoURL,
+		RequiresReview: requiresReview,
 		Attachments: attachments,
 		Test:        test,
 	}
@@ -713,7 +818,7 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 	return lesson, nil
 }
 
-func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, requiresReview bool, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -726,6 +831,9 @@ func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, 
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if lessonType == "test" {
+		requiresReview = false
 	}
 	if err := validateLessonAttachments(lessonType, attachments); err != nil {
 		return nil, err
@@ -773,6 +881,7 @@ func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, 
 		Content:     content,
 		Type:        lessonType,
 		VideoURL:    videoURL,
+		RequiresReview: requiresReview,
 		Attachments: attachments,
 		Test:        test,
 	}

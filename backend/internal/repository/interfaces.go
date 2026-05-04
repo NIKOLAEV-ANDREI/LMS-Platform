@@ -42,4 +42,9 @@ type EnrollmentRepository interface {
 	ListByStudent(userID int64) ([]domain.Enrollment, error)
 	CompleteLesson(userID, courseID, lessonID int64) (*domain.CourseProgress, error)
 	GetCourseProgress(userID, courseID int64) (*domain.CourseProgress, error)
+	SubmitLessonWork(studentID, courseID, lessonID int64, fileName, fileURL, studentNote string) (*domain.LessonSubmission, error)
+	ListTeacherCourseSubmissions(teacherID, courseID int64, status domain.LessonSubmissionStatus) ([]domain.LessonSubmission, error)
+	ListStudentCourseSubmissions(studentID, courseID int64) ([]domain.LessonSubmission, error)
+	GetTeacherCourseSubmissionByID(teacherID, courseID, submissionID int64) (*domain.LessonSubmission, error)
+	ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID int64, status domain.LessonSubmissionStatus, reviewNote string) (*domain.LessonSubmission, error)
 }

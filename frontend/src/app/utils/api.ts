@@ -40,6 +40,7 @@ export interface Lesson {
   content: string;
   type: 'text' | 'video' | 'test';
   videoUrl?: string;
+  requiresReview?: boolean;
   attachments?: LessonAttachment[];
   test?: Test;
   order: number;
@@ -51,6 +52,24 @@ export interface LessonAttachment {
   contentType: string;
   size: number;
   url: string;
+}
+
+export interface LessonSubmission {
+  id: string;
+  courseId: string;
+  lessonId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  teacherId: string;
+  fileName: string;
+  fileUrl: string;
+  studentNote: string;
+  reviewNote: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt?: string;
 }
 
 export interface Test {
@@ -118,6 +137,7 @@ class API {
     { test: /invalid course id/i, value: 'Некорректный ID курса' },
     { test: /invalid module id/i, value: 'Некорректный ID модуля' },
     { test: /invalid lesson id/i, value: 'Некорректный ID урока' },
+    { test: /invalid submission id/i, value: 'Некорректный ID отправленной работы' },
     { test: /module not found in course/i, value: 'Модуль не найден в курсе' },
     { test: /lesson not found in module/i, value: 'Урок не найден в модуле' },
     { test: /lesson not found in this course/i, value: 'Урок не найден в этом курсе' },
@@ -128,6 +148,14 @@ class API {
     { test: /too many attachments \(max \d+\)/i, value: 'Превышено максимально допустимое количество файлов' },
     { test: /attachment \d+ size must be 0\.\.\d+ bytes/i, value: 'Один из файлов превышает допустимый размер' },
     { test: /attachment \d+ has invalid url format/i, value: 'Некорректный формат прикрепленного файла' },
+    { test: /submission not found/i, value: 'Отправленная работа не найдена' },
+    { test: /invalid submission status/i, value: 'Некорректный статус отправленной работы' },
+    { test: /submission is already reviewed/i, value: 'Работа уже проверена преподавателем' },
+    { test: /submission file has invalid format/i, value: 'Некорректный формат файла для отправки' },
+    { test: /lesson does not require review submission/i, value: 'Для этого урока не требуется отправка работы на проверку' },
+    { test: /review note is required for rejection/i, value: 'Добавьте комментарий при отклонении работы' },
+    { test: /invalid review action/i, value: 'Некорректное действие проверки работы' },
+    { test: /review note/i, value: 'Комментарий преподавателя слишком длинный' },
     { test: /test lesson must have at least one question/i, value: 'Тестовый урок должен содержать минимум один вопрос' },
     { test: /question (\d+) type must be single, multiple or open/i, value: 'Укажите корректный тип вопроса (single, multiple или open)' },
     { test: /question (\d+) must have at least 2 options/i, value: 'В вопросе должно быть минимум 2 варианта ответа' },
@@ -205,6 +233,7 @@ class API {
                 content: l.content || '',
                 type: l.type || 'text',
                 videoUrl: l.video_url || l.videoUrl || '',
+                requiresReview: Boolean(l.requires_review ?? l.requiresReview),
                 attachments: Array.isArray(l.attachments)
                   ? l.attachments.map((a: any) => ({
                       id: String(a.id || ''),
@@ -246,6 +275,26 @@ class API {
       enrolledStudents: Array.isArray(raw.enrolledStudents) ? raw.enrolledStudents : [],
       status: raw.status,
       hasPassword: Boolean(raw.has_password ?? raw.hasPassword),
+    };
+  }
+
+  private mapLessonSubmission(raw: any): LessonSubmission {
+    return {
+      id: String(raw.id),
+      courseId: String(raw.course_id ?? raw.courseId ?? ""),
+      lessonId: String(raw.lesson_id ?? raw.lessonId ?? ""),
+      studentId: String(raw.student_id ?? raw.studentId ?? ""),
+      studentName: String(raw.student_name ?? raw.studentName ?? ""),
+      studentEmail: String(raw.student_email ?? raw.studentEmail ?? ""),
+      teacherId: String(raw.teacher_id ?? raw.teacherId ?? ""),
+      fileName: String(raw.file_name ?? raw.fileName ?? ""),
+      fileUrl: String(raw.file_url ?? raw.fileUrl ?? ""),
+      studentNote: String(raw.student_note ?? raw.studentNote ?? ""),
+      reviewNote: String(raw.review_note ?? raw.reviewNote ?? ""),
+      status: (raw.status || "pending") as "pending" | "approved" | "rejected",
+      createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
+      updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ""),
+      reviewedAt: raw.reviewed_at ?? raw.reviewedAt ?? undefined,
     };
   }
 
@@ -601,6 +650,7 @@ class API {
         content: lesson.content,
         type: lesson.type,
         videoUrl: lesson.videoUrl,
+        requiresReview: Boolean(lesson.requiresReview),
         test: lesson.test,
         attachments: lesson.attachments,
       }),
@@ -616,6 +666,7 @@ class API {
         content: lesson.content,
         type: lesson.type,
         videoUrl: lesson.videoUrl,
+        requiresReview: Boolean(lesson.requiresReview),
         test: lesson.test,
         attachments: lesson.attachments,
       }),
@@ -638,6 +689,7 @@ class API {
         content: lesson.content,
         type: lesson.type,
         videoUrl: lesson.videoUrl,
+        requiresReview: Boolean(lesson.requiresReview),
         test: lesson.test,
         attachments: lesson.attachments,
       }),
@@ -653,6 +705,7 @@ class API {
         content: lesson.content,
         type: lesson.type,
         videoUrl: lesson.videoUrl,
+        requiresReview: Boolean(lesson.requiresReview),
         test: lesson.test,
         attachments: lesson.attachments,
       }),
@@ -718,6 +771,47 @@ class API {
       method: 'POST',
     });
     return { success: true, progress };
+  }
+
+  async submitLessonForReview(courseId: string, lessonId: string, payload: { fileName: string; fileUrl: string; studentNote?: string }) {
+    const row = await this.request(`/courses/${courseId}/lessons/${lessonId}/submission`, {
+      method: "POST",
+      body: JSON.stringify({
+        file_name: payload.fileName,
+        file_url: payload.fileUrl,
+        student_note: payload.studentNote || "",
+      }),
+    });
+    return { success: true, submission: this.mapLessonSubmission(row) };
+  }
+
+  async getMyCourseSubmissions(courseId: string): Promise<{ submissions: LessonSubmission[] }> {
+    const rows = await this.request(`/courses/${courseId}/submissions/me`);
+    return { submissions: (rows || []).map((row: any) => this.mapLessonSubmission(row)) };
+  }
+
+  async getTeacherCourseSubmissions(courseId: string, status: "pending" | "approved" | "rejected" | "all" = "pending") {
+    const rows = await this.request(`/teacher/courses/${courseId}/submissions?status=${encodeURIComponent(status)}`);
+    return { submissions: (rows || []).map((row: any) => this.mapLessonSubmission(row)) };
+  }
+
+  async reviewLessonSubmission(
+    courseId: string,
+    submissionId: string,
+    payload: { action: "approve" | "reject"; reviewNote?: string },
+  ) {
+    const data = await this.request(`/teacher/courses/${courseId}/submissions/${submissionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        action: payload.action,
+        review_note: payload.reviewNote || "",
+      }),
+    });
+    return {
+      success: true,
+      submission: data?.submission ? this.mapLessonSubmission(data.submission) : null,
+      progress: data?.progress || null,
+    };
   }
 
   async getProgress(courseId: string): Promise<{ progress: Progress | null }> {

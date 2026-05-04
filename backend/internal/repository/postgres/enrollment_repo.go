@@ -156,3 +156,239 @@ func (r *EnrollmentRepo) GetCourseProgress(userID, courseID int64) (*domain.Cour
 		Progress:         progressValue,
 	}, nil
 }
+
+func (r *EnrollmentRepo) SubmitLessonWork(studentID, courseID, lessonID int64, fileName, fileURL, studentNote string) (*domain.LessonSubmission, error) {
+	var enrolled bool
+	if err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM enrollments WHERE user_id=$1 AND course_id=$2)`, studentID, courseID).Scan(&enrolled); err != nil {
+		return nil, err
+	}
+	if !enrolled {
+		return nil, errors.New("student is not enrolled in this course")
+	}
+
+	var teacherID int64
+	err := r.db.QueryRow(`
+		SELECT c.teacher_id
+		FROM courses c
+		JOIN course_modules m ON m.course_id = c.id
+		JOIN lessons l ON l.module_id = m.id
+		WHERE c.id=$1 AND l.id=$2
+	`, courseID, lessonID).Scan(&teacherID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("lesson not found in this course")
+		}
+		return nil, err
+	}
+
+	var submission domain.LessonSubmission
+	var status string
+	err = r.db.QueryRow(`
+		INSERT INTO lesson_submissions(
+			course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, created_at, updated_at, reviewed_at
+		)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'','pending',NOW(),NOW(),NULL)
+		ON CONFLICT(course_id, lesson_id, student_id) DO UPDATE SET
+			teacher_id = EXCLUDED.teacher_id,
+			file_name = EXCLUDED.file_name,
+			file_url = EXCLUDED.file_url,
+			student_note = EXCLUDED.student_note,
+			review_note = '',
+			status = 'pending',
+			updated_at = NOW(),
+			reviewed_at = NULL
+		RETURNING id, course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, created_at, updated_at, reviewed_at
+	`, courseID, lessonID, studentID, teacherID, fileName, fileURL, studentNote).Scan(
+		&submission.ID,
+		&submission.CourseID,
+		&submission.LessonID,
+		&submission.StudentID,
+		&submission.TeacherID,
+		&submission.FileName,
+		&submission.FileURL,
+		&submission.StudentNote,
+		&submission.ReviewNote,
+		&status,
+		&submission.CreatedAt,
+		&submission.UpdatedAt,
+		&submission.ReviewedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	submission.Status = domain.LessonSubmissionStatus(status)
+	return &submission, nil
+}
+
+func (r *EnrollmentRepo) ListTeacherCourseSubmissions(teacherID, courseID int64, status domain.LessonSubmissionStatus) ([]domain.LessonSubmission, error) {
+	var courseTeacherID int64
+	err := r.db.QueryRow(`SELECT teacher_id FROM courses WHERE id=$1`, courseID).Scan(&courseTeacherID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("course not found")
+		}
+		return nil, err
+	}
+	if courseTeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+
+	query := `
+		SELECT s.id, s.course_id, s.lesson_id, s.student_id, COALESCE(u.name, ''), COALESCE(u.email, ''), s.teacher_id,
+		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.created_at, s.updated_at, s.reviewed_at
+		FROM lesson_submissions s
+		LEFT JOIN users u ON u.id = s.student_id
+		WHERE s.course_id=$1
+	`
+	args := []any{courseID}
+	if status != "" {
+		query += ` AND s.status=$2`
+		args = append(args, string(status))
+	}
+	query += ` ORDER BY s.updated_at DESC, s.id DESC`
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	submissions := make([]domain.LessonSubmission, 0, 16)
+	for rows.Next() {
+		submission, err := scanSubmissionRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		submissions = append(submissions, submission)
+	}
+	return submissions, rows.Err()
+}
+
+func (r *EnrollmentRepo) ListStudentCourseSubmissions(studentID, courseID int64) ([]domain.LessonSubmission, error) {
+	rows, err := r.db.Query(`
+		SELECT s.id, s.course_id, s.lesson_id, s.student_id, COALESCE(u.name, ''), COALESCE(u.email, ''), s.teacher_id,
+		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.created_at, s.updated_at, s.reviewed_at
+		FROM lesson_submissions s
+		LEFT JOIN users u ON u.id = s.student_id
+		WHERE s.student_id=$1 AND s.course_id=$2
+		ORDER BY s.updated_at DESC, s.id DESC
+	`, studentID, courseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	submissions := make([]domain.LessonSubmission, 0, 16)
+	for rows.Next() {
+		submission, err := scanSubmissionRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		submissions = append(submissions, submission)
+	}
+	return submissions, rows.Err()
+}
+
+func (r *EnrollmentRepo) GetTeacherCourseSubmissionByID(teacherID, courseID, submissionID int64) (*domain.LessonSubmission, error) {
+	row := r.db.QueryRow(`
+		SELECT s.id, s.course_id, s.lesson_id, s.student_id, COALESCE(u.name, ''), COALESCE(u.email, ''), s.teacher_id,
+		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.created_at, s.updated_at, s.reviewed_at
+		FROM lesson_submissions s
+		LEFT JOIN users u ON u.id = s.student_id
+		WHERE s.id=$1 AND s.course_id=$2 AND s.teacher_id=$3
+	`, submissionID, courseID, teacherID)
+
+	submission, err := scanSubmissionQueryRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("submission not found")
+		}
+		return nil, err
+	}
+	return submission, nil
+}
+
+func (r *EnrollmentRepo) ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID int64, status domain.LessonSubmissionStatus, reviewNote string) (*domain.LessonSubmission, error) {
+	var submission domain.LessonSubmission
+	var statusValue string
+	err := r.db.QueryRow(`
+		UPDATE lesson_submissions
+		SET status=$1, review_note=$2, reviewed_at=NOW(), updated_at=NOW()
+		WHERE id=$3 AND course_id=$4 AND teacher_id=$5
+		RETURNING id, course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, created_at, updated_at, reviewed_at
+	`, string(status), reviewNote, submissionID, courseID, teacherID).Scan(
+		&submission.ID,
+		&submission.CourseID,
+		&submission.LessonID,
+		&submission.StudentID,
+		&submission.TeacherID,
+		&submission.FileName,
+		&submission.FileURL,
+		&submission.StudentNote,
+		&submission.ReviewNote,
+		&statusValue,
+		&submission.CreatedAt,
+		&submission.UpdatedAt,
+		&submission.ReviewedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("submission not found")
+		}
+		return nil, err
+	}
+	submission.Status = domain.LessonSubmissionStatus(statusValue)
+	return &submission, nil
+}
+
+func scanSubmissionRow(rows *sql.Rows) (domain.LessonSubmission, error) {
+	var submission domain.LessonSubmission
+	var status string
+	if err := rows.Scan(
+		&submission.ID,
+		&submission.CourseID,
+		&submission.LessonID,
+		&submission.StudentID,
+		&submission.StudentName,
+		&submission.StudentEmail,
+		&submission.TeacherID,
+		&submission.FileName,
+		&submission.FileURL,
+		&submission.StudentNote,
+		&submission.ReviewNote,
+		&status,
+		&submission.CreatedAt,
+		&submission.UpdatedAt,
+		&submission.ReviewedAt,
+	); err != nil {
+		return domain.LessonSubmission{}, err
+	}
+	submission.Status = domain.LessonSubmissionStatus(status)
+	return submission, nil
+}
+
+func scanSubmissionQueryRow(row *sql.Row) (*domain.LessonSubmission, error) {
+	var submission domain.LessonSubmission
+	var status string
+	if err := row.Scan(
+		&submission.ID,
+		&submission.CourseID,
+		&submission.LessonID,
+		&submission.StudentID,
+		&submission.StudentName,
+		&submission.StudentEmail,
+		&submission.TeacherID,
+		&submission.FileName,
+		&submission.FileURL,
+		&submission.StudentNote,
+		&submission.ReviewNote,
+		&status,
+		&submission.CreatedAt,
+		&submission.UpdatedAt,
+		&submission.ReviewedAt,
+	); err != nil {
+		return nil, err
+	}
+	submission.Status = domain.LessonSubmissionStatus(status)
+	return &submission, nil
+}

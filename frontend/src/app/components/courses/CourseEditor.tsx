@@ -37,6 +37,7 @@ export default function CourseEditor() {
   const [lessonForm, setLessonForm] = useState({
     title: "",
     type: "text" as "text" | "video" | "test",
+    requiresReview: false,
   });
 
   useEffect(() => {
@@ -117,7 +118,7 @@ export default function CourseEditor() {
 
   const openCreateLesson = (moduleId: string) => {
     setSelectedModuleId(moduleId);
-    setLessonForm({ title: "", type: "text" });
+    setLessonForm({ title: "", type: "text", requiresReview: false });
     setLessonDialog(true);
   };
 
@@ -138,6 +139,7 @@ export default function CourseEditor() {
         type: lessonForm.type,
         content: "",
         videoUrl: "",
+        requiresReview: lessonForm.type !== "test" && lessonForm.requiresReview,
       };
 
       if (lessonForm.type === "test") {
@@ -461,7 +463,13 @@ export default function CourseEditor() {
                 <Label htmlFor="lesson-type">Тип урока</Label>
                 <Select
                   value={lessonForm.type}
-                  onValueChange={(value: "text" | "video" | "test") => setLessonForm({ ...lessonForm, type: value })}
+                  onValueChange={(value: "text" | "video" | "test") =>
+                    setLessonForm((prev) => ({
+                      ...prev,
+                      type: value,
+                      requiresReview: value === "test" ? false : prev.requiresReview,
+                    }))
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -474,6 +482,22 @@ export default function CourseEditor() {
                 </Select>
               </div>
 
+              {(lessonForm.type === "text" || lessonForm.type === "video") && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={lessonForm.requiresReview}
+                    onChange={(event) =>
+                      setLessonForm((prev) => ({
+                        ...prev,
+                        requiresReview: event.target.checked,
+                      }))
+                    }
+                  />
+                  Требуется проверка преподавателем
+                </label>
+              )}
+
               <Button type="submit" className="w-full">
                 Добавить урок
               </Button>
@@ -484,4 +508,3 @@ export default function CourseEditor() {
     </Layout>
   );
 }
-

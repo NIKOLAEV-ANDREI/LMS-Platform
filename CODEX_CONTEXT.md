@@ -1466,3 +1466,107 @@ Fix applied:
 Verification:
 - `npm run check:encoding` passed
 - `npm run build` passed
+
+## 71) Student lesson work submission + teacher review workflow (2026-05-04)
+Implemented full verification workflow for practical lesson completion.
+
+Backend:
+- Added new domain model and statuses:
+  - `LessonSubmission`
+  - statuses: `pending`, `approved`, `rejected`
+- DB migration:
+  - new table `lesson_submissions` with unique key `(course_id, lesson_id, student_id)`
+  - stores uploaded file reference, student note, teacher review note, status and timestamps.
+- Enrollment repository (PostgreSQL) extended with methods:
+  - submit student work (upsert; resubmission moves status back to `pending`)
+  - list teacher course submissions by status
+  - list student submissions in course
+  - fetch submission by id for teacher
+  - review submission by teacher.
+- Service layer (`CourseService`) extended:
+  - `SubmitLessonForReview`
+  - `StudentCourseSubmissions`
+  - `TeacherCourseSubmissions`
+  - `ReviewLessonSubmissionByTeacher`
+  - on teacher approve, lesson is automatically marked completed via existing progress logic.
+- New validations in `field_limits.go`:
+  - submission file name/url format/size limits
+  - student note max length
+  - teacher review note max length.
+- New API routes:
+  - student:
+    - `POST /api/courses/{courseID}/lessons/{lessonID}/submission`
+    - `GET /api/courses/{courseID}/submissions/me`
+  - teacher:
+    - `GET /api/teacher/courses/{courseID}/submissions?status=pending|approved|rejected|all`
+    - `PATCH /api/teacher/courses/{courseID}/submissions/{submissionID}` with `action=approve|reject`.
+
+Frontend:
+- API client extended with `LessonSubmission` type and methods:
+  - `submitLessonForReview`
+  - `getMyCourseSubmissions`
+  - `getTeacherCourseSubmissions`
+  - `reviewLessonSubmission`
+- `CoursePage` updates:
+  - student lesson rows now show submission status badges (`На проверке`, `Принято`, `Отклонено`)
+  - teacher-owner sees `Работы на проверку` card on course page:
+    - download file
+    - approve completion
+    - reject with required comment.
+- `LessonViewer` updates for students:
+  - can attach one file and send lesson work for review
+  - sees current submission status, submitted file and teacher comment
+  - rejected work can be resubmitted
+  - removed direct completion path for text/video student lessons; completion now comes from teacher approval.
+- Added frontend limits for submission/review notes and max submission file size.
+
+Updated files:
+- `backend/internal/db/migrate.go`
+- `backend/internal/domain/models.go`
+- `backend/internal/handler/http/handler.go`
+- `backend/internal/repository/interfaces.go`
+- `backend/internal/repository/postgres/enrollment_repo.go`
+- `backend/internal/repository/sqlite/enrollment_repo.go`
+- `backend/internal/service/course_service.go`
+- `backend/internal/service/field_limits.go`
+- `frontend/src/app/components/courses/CoursePage.tsx`
+- `frontend/src/app/components/courses/LessonViewer.tsx`
+- `frontend/src/app/utils/api.ts`
+- `frontend/src/app/utils/limits.ts`
+
+Verification:
+- `go test ./...` passed
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 72) Доработка проверки уроков и UX форм (2026-05-04)
+Сделаны точечные доработки по текущим недочётам.
+
+Что добавлено:
+- Кнопка выбора файла теперь оформлена как отдельная UI-кнопка с рамкой и ховером:
+  - у студента в отправке работы на проверку
+  - у учителя/админа в редакторе урока (блок прикрепления файлов)
+- Добавлен флаг `requiresReview` ("Требуется проверка преподавателем") для текстовых/видео уроков:
+  - при создании урока (`CourseEditor`)
+  - при редактировании урока (`LessonEditor`)
+  - тестовые уроки всегда без проверки преподавателем
+- Логика прохождения урока для студента:
+  - если у урока включена проверка: показывается отправка файла на проверку
+  - если проверка выключена: урок можно завершить сразу кнопкой "Завершить урок"
+- Отклонение работы преподавателем переведено с `window.prompt` на центрированную модалку:
+  - textarea с лимитом символов
+  - счётчик символов
+  - валидация обязательного комментария
+
+Технически:
+- Восстановлена корректная UTF-8 кодировка файлов уроков без mojibake.
+
+Изменённые файлы:
+- `frontend/src/app/components/courses/LessonViewer.tsx`
+- `frontend/src/app/components/courses/LessonEditor.tsx`
+- `frontend/src/app/components/courses/CoursePage.tsx`
+
+Проверки:
+- `go test ./...` — успешно
+- `npm run check:encoding` — успешно
+- `npm run build` — успешно

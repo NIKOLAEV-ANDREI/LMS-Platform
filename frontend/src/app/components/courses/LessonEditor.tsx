@@ -29,6 +29,7 @@ type LessonDraft = {
     content: string;
     type: "text" | "video" | "test";
     videoUrl: string;
+    requiresReview: boolean;
     attachments: LessonAttachment[];
   };
   testQuestions: EditableQuestion[];
@@ -52,6 +53,7 @@ export default function LessonEditor() {
     content: "",
     type: "text" as "text" | "video" | "test",
     videoUrl: "",
+    requiresReview: false,
     attachments: [] as LessonAttachment[],
   });
   const [testQuestions, setTestQuestions] = useState<EditableQuestion[]>([]);
@@ -108,6 +110,7 @@ export default function LessonEditor() {
         content: foundLesson.content || "",
         type: foundLesson.type,
         videoUrl: foundLesson.videoUrl || "",
+        requiresReview: Boolean(foundLesson.requiresReview),
         attachments: Array.isArray(foundLesson.attachments) ? foundLesson.attachments : [],
       };
 
@@ -140,6 +143,7 @@ export default function LessonEditor() {
       if (draftData) {
         setLessonForm({
           ...draftData.lessonForm,
+          requiresReview: Boolean(draftData.lessonForm.requiresReview),
           attachments: Array.isArray(draftData.lessonForm.attachments) ? draftData.lessonForm.attachments : [],
         });
         setTestQuestions(Array.isArray(draftData.testQuestions) ? draftData.testQuestions : []);
@@ -280,6 +284,7 @@ export default function LessonEditor() {
             : "",
       type: lessonForm.type,
       videoUrl: lessonForm.type === "video" ? lessonForm.videoUrl : "",
+      requiresReview: lessonForm.type === "test" ? false : lessonForm.requiresReview,
       attachments: lessonForm.type === "text" || lessonForm.type === "video" ? lessonForm.attachments : [],
       test: lessonForm.type === "test" ? { questions: testQuestions } : undefined,
     };
@@ -373,7 +378,13 @@ export default function LessonEditor() {
                 <Label htmlFor="lesson-type">Тип урока</Label>
                 <Select
                   value={lessonForm.type}
-                  onValueChange={(value: "text" | "video" | "test") => setLessonForm((prev) => ({ ...prev, type: value }))}
+                  onValueChange={(value: "text" | "video" | "test") =>
+                    setLessonForm((prev) => ({
+                      ...prev,
+                      type: value,
+                      requiresReview: value === "test" ? false : prev.requiresReview,
+                    }))
+                  }
                 >
                   <SelectTrigger id="lesson-type">
                     <SelectValue />
@@ -385,6 +396,22 @@ export default function LessonEditor() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {(lessonForm.type === "text" || lessonForm.type === "video") && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={lessonForm.requiresReview}
+                    onChange={(event) =>
+                      setLessonForm((prev) => ({
+                        ...prev,
+                        requiresReview: event.target.checked,
+                      }))
+                    }
+                  />
+                  Требуется проверка преподавателем
+                </label>
+              )}
 
               {lessonForm.type === "text" && (
                 <div className="space-y-2">
@@ -508,13 +535,24 @@ export default function LessonEditor() {
                     </span>
                   </div>
 
-                  <Input
+                  <input
                     id="lesson-files"
                     type="file"
                     multiple
                     onChange={addAttachments}
                     disabled={lessonForm.attachments.length >= LIMITS.lessonAttachmentsMaxCount}
+                    className="hidden"
                   />
+                  <label
+                    htmlFor="lesson-files"
+                    className={`inline-flex h-10 cursor-pointer items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium transition-colors ${
+                      lessonForm.attachments.length >= LIMITS.lessonAttachmentsMaxCount
+                        ? "pointer-events-none opacity-50"
+                        : "hover:border-primary hover:bg-primary/5"
+                    }`}
+                  >
+                    Выберите файлы
+                  </label>
 
                   <p className="text-xs text-muted-foreground">
                     До {LIMITS.lessonAttachmentsMaxCount} файлов, максимум{" "}

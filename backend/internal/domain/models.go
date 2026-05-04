@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type Role string
 
 const (
@@ -53,6 +55,7 @@ type Lesson struct {
 	Content     string             `json:"content"`
 	Type        string             `json:"type"`
 	VideoURL    string             `json:"video_url,omitempty"`
+	RequiresReview bool            `json:"requires_review"`
 	Attachments []LessonAttachment `json:"attachments,omitempty"`
 	Test        *LessonTest        `json:"test,omitempty"`
 	Order       int                `json:"order"`
@@ -84,4 +87,30 @@ type CourseProgress struct {
 	CourseID         int64   `json:"course_id"`
 	CompletedLessons []int64 `json:"completed_lessons"`
 	Progress         int     `json:"progress"`
+}
+
+type LessonSubmissionStatus string
+
+const (
+	LessonSubmissionPending  LessonSubmissionStatus = "pending"
+	LessonSubmissionApproved LessonSubmissionStatus = "approved"
+	LessonSubmissionRejected LessonSubmissionStatus = "rejected"
+)
+
+type LessonSubmission struct {
+	ID           int64                  `json:"id"`
+	CourseID     int64                  `json:"course_id"`
+	LessonID     int64                  `json:"lesson_id"`
+	StudentID    int64                  `json:"student_id"`
+	StudentName  string                 `json:"student_name,omitempty"`
+	StudentEmail string                 `json:"student_email,omitempty"`
+	TeacherID    int64                  `json:"teacher_id"`
+	FileName     string                 `json:"file_name"`
+	FileURL      string                 `json:"file_url"`
+	StudentNote  string                 `json:"student_note,omitempty"`
+	ReviewNote   string                 `json:"review_note,omitempty"`
+	Status       LessonSubmissionStatus `json:"status"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+	ReviewedAt   *time.Time             `json:"reviewed_at,omitempty"`
 }

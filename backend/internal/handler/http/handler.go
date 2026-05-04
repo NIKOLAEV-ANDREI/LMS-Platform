@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"lms-backend/internal/domain"
@@ -44,6 +45,8 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.Patch("/courses/{courseID}/progress", h.updateProgress)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Get("/progress/{courseID}", h.getProgress)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/complete", h.completeLesson)
+			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/submission", h.submitLessonForReview)
+			p.With(middleware.RequireRole(domain.RoleStudent)).Get("/courses/{courseID}/submissions/me", h.myCourseSubmissions)
 
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses", h.createCourse)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses", h.teacherCourses)
@@ -60,6 +63,8 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses/{courseID}/modules/{moduleID}/lessons", h.addLesson)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.updateLesson)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Delete("/teacher/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.deleteLesson)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/submissions", h.teacherCourseSubmissions)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}/submissions/{submissionID}", h.reviewLessonSubmission)
 
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/users", h.listUsers)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/users/{id}", h.userDetails)
@@ -490,6 +495,113 @@ func (h *Handler) completeLesson(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, progress)
 }
 
+func (h *Handler) submitLessonForReview(w http.ResponseWriter, r *http.Request) {
+	studentID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+	var req struct {
+		FileName    string `json:"file_name"`
+		FileURL     string `json:"file_url"`
+		StudentNote string `json:"student_note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	submission, err := h.course.SubmitLessonForReview(studentID, courseID, lessonID, req.FileName, req.FileURL, req.StudentNote)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, submission)
+}
+
+func (h *Handler) myCourseSubmissions(w http.ResponseWriter, r *http.Request) {
+	studentID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+
+	submissions, err := h.course.StudentCourseSubmissions(studentID, courseID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, submissions)
+}
+
+func (h *Handler) teacherCourseSubmissions(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	status := r.URL.Query().Get("status")
+
+	submissions, err := h.course.TeacherCourseSubmissions(teacherID, courseID, status)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, submissions)
+}
+
+func (h *Handler) reviewLessonSubmission(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	submissionID, err := strconv.ParseInt(chi.URLParam(r, "submissionID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid submission id")
+		return
+	}
+	var req struct {
+		Action     string `json:"action"`
+		ReviewNote string `json:"review_note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	action := strings.TrimSpace(strings.ToLower(req.Action))
+	if action != "approve" && action != "reject" {
+		writeErr(w, http.StatusBadRequest, "invalid review action")
+		return
+	}
+	if action == "reject" && strings.TrimSpace(req.ReviewNote) == "" {
+		writeErr(w, http.StatusBadRequest, "review note is required for rejection")
+		return
+	}
+
+	submission, progress, err := h.course.ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID, action == "approve", req.ReviewNote)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	resp := map[string]any{"submission": submission}
+	if progress != nil {
+		resp["progress"] = progress
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) listUsers(w http.ResponseWriter, _ *http.Request) {
 	users, err := h.admin.ListUsers()
 	if err != nil {
@@ -828,6 +940,7 @@ func (h *Handler) addLesson(w http.ResponseWriter, r *http.Request) {
 		Content     string                    `json:"content"`
 		Type        string                    `json:"type"`
 		VideoURL    string                    `json:"videoUrl"`
+		RequiresReview bool                   `json:"requiresReview"`
 		Attachments []domain.LessonAttachment `json:"attachments"`
 		Test        *domain.LessonTest        `json:"test"`
 	}
@@ -836,7 +949,7 @@ func (h *Handler) addLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.course.AddLessonByTeacher(teacherID, courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
+	lesson, err := h.course.AddLessonByTeacher(teacherID, courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.RequiresReview, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -914,6 +1027,7 @@ func (h *Handler) updateLesson(w http.ResponseWriter, r *http.Request) {
 		Content     string                    `json:"content"`
 		Type        string                    `json:"type"`
 		VideoURL    string                    `json:"videoUrl"`
+		RequiresReview bool                   `json:"requiresReview"`
 		Attachments []domain.LessonAttachment `json:"attachments"`
 		Test        *domain.LessonTest        `json:"test"`
 	}
@@ -922,7 +1036,7 @@ func (h *Handler) updateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.course.UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
+	lesson, err := h.course.UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.RequiresReview, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1037,6 +1151,7 @@ func (h *Handler) addLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		Content     string                    `json:"content"`
 		Type        string                    `json:"type"`
 		VideoURL    string                    `json:"videoUrl"`
+		RequiresReview bool                   `json:"requiresReview"`
 		Attachments []domain.LessonAttachment `json:"attachments"`
 		Test        *domain.LessonTest        `json:"test"`
 	}
@@ -1044,7 +1159,7 @@ func (h *Handler) addLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	lesson, err := h.course.AddLessonByAdmin(courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
+	lesson, err := h.course.AddLessonByAdmin(courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.RequiresReview, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1073,6 +1188,7 @@ func (h *Handler) updateLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		Content     string                    `json:"content"`
 		Type        string                    `json:"type"`
 		VideoURL    string                    `json:"videoUrl"`
+		RequiresReview bool                   `json:"requiresReview"`
 		Attachments []domain.LessonAttachment `json:"attachments"`
 		Test        *domain.LessonTest        `json:"test"`
 	}
@@ -1080,7 +1196,7 @@ func (h *Handler) updateLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	lesson, err := h.course.UpdateLessonByAdmin(courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
+	lesson, err := h.course.UpdateLessonByAdmin(courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.RequiresReview, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

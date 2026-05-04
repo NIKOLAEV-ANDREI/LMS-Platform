@@ -44,11 +44,13 @@ func Migrate(db *sql.DB) error {
 			content TEXT NOT NULL DEFAULT '',
 			lesson_type TEXT NOT NULL CHECK(lesson_type IN ('text','video','test')),
 			video_url TEXT NOT NULL DEFAULT '',
+			requires_review BOOLEAN NOT NULL DEFAULT FALSE,
 			test_data JSONB,
 			attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
 			sort_order INTEGER NOT NULL DEFAULT 0
 		);`,
 		`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS test_data JSONB;`,
+		`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS requires_review BOOLEAN NOT NULL DEFAULT FALSE;`,
 		`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;`,
 		`CREATE TABLE IF NOT EXISTS lesson_progress (
 			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -56,6 +58,22 @@ func Migrate(db *sql.DB) error {
 			lesson_id BIGINT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
 			completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY(user_id, course_id, lesson_id)
+		);`,
+		`CREATE TABLE IF NOT EXISTS lesson_submissions (
+			id BIGSERIAL PRIMARY KEY,
+			course_id BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+			lesson_id BIGINT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+			student_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			teacher_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			file_name TEXT NOT NULL,
+			file_url TEXT NOT NULL,
+			student_note TEXT NOT NULL DEFAULT '',
+			review_note TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			reviewed_at TIMESTAMPTZ,
+			UNIQUE(course_id, lesson_id, student_id)
 		);`,
 	}
 

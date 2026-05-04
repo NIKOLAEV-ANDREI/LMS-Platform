@@ -37,6 +37,11 @@ const (
 	MaxQuestionOptionLen = 200
 
 	MaxAvatarURLLen = 2_000_000
+
+	MaxSubmissionFileNameLen = 180
+	MaxSubmissionFileURLLen  = 20_000_000
+	MaxSubmissionStudentNote = 1500
+	MaxSubmissionTeacherNote = 2000
 )
 
 func runeCount(value string) int {
@@ -253,4 +258,34 @@ func validateLessonTestData(test *domain.LessonTest) error {
 		}
 	}
 	return nil
+}
+
+func validateLessonSubmissionPayload(fileName, fileURL, studentNote string) error {
+	fileName = strings.TrimSpace(fileName)
+	fileURL = strings.TrimSpace(fileURL)
+	studentNote = strings.TrimSpace(studentNote)
+
+	if err := ensureRequired("submission file name", fileName); err != nil {
+		return err
+	}
+	if err := ensureMaxLen("submission file name", fileName, MaxSubmissionFileNameLen); err != nil {
+		return err
+	}
+	if err := ensureRequired("submission file url", fileURL); err != nil {
+		return err
+	}
+	if err := ensureMaxLen("submission file url", fileURL, MaxSubmissionFileURLLen); err != nil {
+		return err
+	}
+	if err := ensureMaxLen("submission note", studentNote, MaxSubmissionStudentNote); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(fileURL, "data:") && !strings.HasPrefix(fileURL, "https://") && !strings.HasPrefix(fileURL, "http://") {
+		return errors.New("submission file has invalid format")
+	}
+	return nil
+}
+
+func validateTeacherReviewNote(reviewNote string) error {
+	return ensureMaxLen("review note", strings.TrimSpace(reviewNote), MaxSubmissionTeacherNote)
 }
