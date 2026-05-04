@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ClipboardList, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import CharCounter from "../shared/CharCounter";
@@ -11,7 +11,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
-import { api, Course, Lesson } from "../../utils/api";
+import { api, Course, Lesson, LessonAttachment } from "../../utils/api";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
 import { sanitizeRichText, toPlainText } from "../../utils/richText";
 
@@ -29,6 +29,7 @@ type LessonDraft = {
     content: string;
     type: "text" | "video" | "test";
     videoUrl: string;
+    attachments: LessonAttachment[];
   };
   testQuestions: EditableQuestion[];
   savedAt: string;
@@ -51,6 +52,7 @@ export default function LessonEditor() {
     content: "",
     type: "text" as "text" | "video" | "test",
     videoUrl: "",
+    attachments: [] as LessonAttachment[],
   });
   const [testQuestions, setTestQuestions] = useState<EditableQuestion[]>([]);
   const draftStorageKey = courseId && lessonId ? `lms:lesson-editor-draft:${courseId}:${lessonId}` : null;
@@ -106,6 +108,7 @@ export default function LessonEditor() {
         content: foundLesson.content || "",
         type: foundLesson.type,
         videoUrl: foundLesson.videoUrl || "",
+        attachments: Array.isArray(foundLesson.attachments) ? foundLesson.attachments : [],
       };
 
       const serverQuestions =
@@ -135,7 +138,10 @@ export default function LessonEditor() {
       }
 
       if (draftData) {
-        setLessonForm(draftData.lessonForm);
+        setLessonForm({
+          ...draftData.lessonForm,
+          attachments: Array.isArray(draftData.lessonForm.attachments) ? draftData.lessonForm.attachments : [],
+        });
         setTestQuestions(Array.isArray(draftData.testQuestions) ? draftData.testQuestions : []);
         toast.info("Черновик урока восстановлен");
       } else {
@@ -197,6 +203,69 @@ export default function LessonEditor() {
     setTestQuestions((prev) => prev.filter((_, current) => current !== index));
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  };
+
+  const toDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      reader.readAsDataURL(file);
+    });
+
+  const addAttachments = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    const availableSlots = LIMITS.lessonAttachmentsMaxCount - lessonForm.attachments.length;
+    if (availableSlots <= 0) {
+      toast.error(`Можно прикрепить не более ${LIMITS.lessonAttachmentsMaxCount} файлов`);
+      return;
+    }
+    if (files.length > availableSlots) {
+      toast.error(`Добавлены только первые ${availableSlots} файлов из выбранных`);
+    }
+
+    const filesForUpload = files.slice(0, availableSlots);
+    const nextAttachments: LessonAttachment[] = [];
+    for (const [index, file] of filesForUpload.entries()) {
+      if (file.size > LIMITS.lessonAttachmentMaxSize) {
+        toast.error(`Файл "${file.name}" больше ${(LIMITS.lessonAttachmentMaxSize / (1024 * 1024)).toFixed(0)} МБ`);
+        continue;
+      }
+      try {
+        const dataUrl = await toDataUrl(file);
+        nextAttachments.push({
+          id: `att-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+          name: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size,
+          url: dataUrl,
+        });
+      } catch (error: any) {
+        toast.error(error?.message || `Не удалось добавить файл "${file.name}"`);
+      }
+    }
+
+    if (nextAttachments.length === 0) return;
+    setLessonForm((prev) => ({
+      ...prev,
+      attachments: [...prev.attachments, ...nextAttachments],
+    }));
+  };
+
+  const removeAttachment = (attachmentId: string) => {
+    setLessonForm((prev) => ({
+      ...prev,
+      attachments: prev.attachments.filter((attachment) => attachment.id !== attachmentId),
+    }));
+  };
+
   const saveLesson = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!courseId || !moduleId || !lesson) return;
@@ -211,6 +280,7 @@ export default function LessonEditor() {
             : "",
       type: lessonForm.type,
       videoUrl: lessonForm.type === "video" ? lessonForm.videoUrl : "",
+      attachments: lessonForm.type === "text" || lessonForm.type === "video" ? lessonForm.attachments : [],
       test: lessonForm.type === "test" ? { questions: testQuestions } : undefined,
     };
 
@@ -338,7 +408,7 @@ export default function LessonEditor() {
               {lessonForm.type === "video" && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="video-url">URL видео (YouTube)</Label>
+                    <Label htmlFor="video-url">URL видео (YouTube / VK Video / RuTube)</Label>
                     <Input
                       id="video-url"
                       type="url"
@@ -349,7 +419,7 @@ export default function LessonEditor() {
                           videoUrl: applyTextLimit(event.target.value, LIMITS.videoUrl, "URL видео"),
                         }))
                       }
-                      placeholder="https://www.youtube.com/watch?v=..."
+                      placeholder="https://rutube.ru/video/... или https://vkvideo.ru/video..."
                       required
                     />
                   </div>
@@ -423,6 +493,54 @@ export default function LessonEditor() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              )}
+
+              {(lessonForm.type === "text" || lessonForm.type === "video") && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="lesson-files" className="flex items-center gap-2">
+                      <Paperclip className="h-4 w-4 text-primary" />
+                      Файлы урока
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      {lessonForm.attachments.length}/{LIMITS.lessonAttachmentsMaxCount}
+                    </span>
+                  </div>
+
+                  <Input
+                    id="lesson-files"
+                    type="file"
+                    multiple
+                    onChange={addAttachments}
+                    disabled={lessonForm.attachments.length >= LIMITS.lessonAttachmentsMaxCount}
+                  />
+
+                  <p className="text-xs text-muted-foreground">
+                    До {LIMITS.lessonAttachmentsMaxCount} файлов, максимум{" "}
+                    {(LIMITS.lessonAttachmentMaxSize / (1024 * 1024)).toFixed(0)} МБ на файл.
+                  </p>
+
+                  {lessonForm.attachments.length > 0 && (
+                    <div className="space-y-2">
+                      {lessonForm.attachments.map((attachment) => (
+                        <div
+                          key={attachment.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{attachment.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {attachment.contentType || "Файл"} - {formatFileSize(attachment.size || 0)}
+                            </p>
+                          </div>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeAttachment(attachment.id)}>
+                            <X className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

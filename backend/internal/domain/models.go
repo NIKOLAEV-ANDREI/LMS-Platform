@@ -47,14 +47,23 @@ type Module struct {
 }
 
 type Lesson struct {
-	ID       int64       `json:"id"`
-	ModuleID int64       `json:"module_id"`
-	Title    string      `json:"title"`
-	Content  string      `json:"content"`
-	Type     string      `json:"type"`
-	VideoURL string      `json:"video_url,omitempty"`
-	Test     *LessonTest `json:"test,omitempty"`
-	Order    int         `json:"order"`
+	ID          int64              `json:"id"`
+	ModuleID    int64              `json:"module_id"`
+	Title       string             `json:"title"`
+	Content     string             `json:"content"`
+	Type        string             `json:"type"`
+	VideoURL    string             `json:"video_url,omitempty"`
+	Attachments []LessonAttachment `json:"attachments,omitempty"`
+	Test        *LessonTest        `json:"test,omitempty"`
+	Order       int                `json:"order"`
+}
+
+type LessonAttachment struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ContentType string `json:"contentType"`
+	Size        int64  `json:"size"`
+	URL         string `json:"url"`
 }
 
 type LessonTest struct {

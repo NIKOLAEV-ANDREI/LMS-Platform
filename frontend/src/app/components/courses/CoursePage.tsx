@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui
 import { Input } from "../ui/input";
 import { Progress } from "../ui/progress";
 import { api, Course, Progress as CourseProgress, User } from "../../utils/api";
+import { LIMITS } from "../../utils/limits";
 import { formatRuCount } from "../../utils/plural";
 
 type CoursePageLocationState = {
@@ -73,6 +74,14 @@ export default function CoursePage() {
       toast.error("Введите пароль курса");
       return;
     }
+    if (normalized.length < LIMITS.courseAccessPasswordMin) {
+      toast.error(`Пароль курса должен содержать минимум ${LIMITS.courseAccessPasswordMin} символа`);
+      return;
+    }
+    if (normalized.length > LIMITS.courseAccessPassword) {
+      toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
+      return;
+    }
     setCheckingPassword(true);
     try {
       await loadData(normalized);
@@ -91,6 +100,14 @@ export default function CoursePage() {
         accessPassword = entered.trim();
         if (!accessPassword) {
           toast.error("Введите пароль курса");
+          return;
+        }
+        if (accessPassword.length < LIMITS.courseAccessPasswordMin) {
+          toast.error(`Пароль курса должен содержать минимум ${LIMITS.courseAccessPasswordMin} символа`);
+          return;
+        }
+        if (accessPassword.length > LIMITS.courseAccessPassword) {
+          toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
           return;
         }
       }

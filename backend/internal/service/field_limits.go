@@ -17,6 +17,7 @@ const (
 
 	MaxCourseTitleLen       = 120
 	MaxCourseDescriptionLen = 2000
+	MinCoursePasswordLen    = 4
 	MaxCoursePasswordLen    = 10
 
 	MaxModuleTitleLen       = 120
@@ -25,6 +26,11 @@ const (
 	MaxLessonTitleLen   = 150
 	MaxLessonContentLen = 10000
 	MaxVideoURLLen      = 2048
+	MaxLessonFilesCount = 5
+	MaxLessonFileName   = 180
+	MaxLessonFileType   = 120
+	MaxLessonFileSize   = 15 * 1024 * 1024
+	MaxLessonFileURLLen = 20_000_000
 
 	MaxQuestionIDLen     = 64
 	MaxQuestionTextLen   = 500
@@ -107,6 +113,9 @@ func validateCourseAccessPassword(password string) error {
 	if err := ensureRequired("course password", password); err != nil {
 		return err
 	}
+	if err := ensureMinLen("course password", password, MinCoursePasswordLen); err != nil {
+		return err
+	}
 	return ensureMaxLen("course password", password, MaxCoursePasswordLen)
 }
 
@@ -131,6 +140,57 @@ func validateLessonCommon(title, content, videoURL string) error {
 		return err
 	}
 	return ensureMaxLen("video url", videoURL, MaxVideoURLLen)
+}
+
+func validateLessonAttachments(lessonType string, attachments []domain.LessonAttachment) error {
+	if len(attachments) == 0 {
+		return nil
+	}
+	if lessonType != "text" && lessonType != "video" {
+		return errors.New("attachments are allowed only for text and video lessons")
+	}
+	if len(attachments) > MaxLessonFilesCount {
+		return fmt.Errorf("too many attachments (max %d)", MaxLessonFilesCount)
+	}
+	for index := range attachments {
+		attachment := &attachments[index]
+		attachment.ID = strings.TrimSpace(attachment.ID)
+		attachment.Name = strings.TrimSpace(attachment.Name)
+		attachment.ContentType = strings.TrimSpace(attachment.ContentType)
+		attachment.URL = strings.TrimSpace(attachment.URL)
+
+		if err := ensureRequired(fmt.Sprintf("attachment %d id", index+1), attachment.ID); err != nil {
+			return err
+		}
+		if err := ensureMaxLen(fmt.Sprintf("attachment %d id", index+1), attachment.ID, MaxQuestionIDLen); err != nil {
+			return err
+		}
+		if err := ensureRequired(fmt.Sprintf("attachment %d name", index+1), attachment.Name); err != nil {
+			return err
+		}
+		if err := ensureMaxLen(fmt.Sprintf("attachment %d name", index+1), attachment.Name, MaxLessonFileName); err != nil {
+			return err
+		}
+		if err := ensureRequired(fmt.Sprintf("attachment %d content type", index+1), attachment.ContentType); err != nil {
+			return err
+		}
+		if err := ensureMaxLen(fmt.Sprintf("attachment %d content type", index+1), attachment.ContentType, MaxLessonFileType); err != nil {
+			return err
+		}
+		if attachment.Size < 0 || attachment.Size > MaxLessonFileSize {
+			return fmt.Errorf("attachment %d size must be 0..%d bytes", index+1, MaxLessonFileSize)
+		}
+		if err := ensureRequired(fmt.Sprintf("attachment %d url", index+1), attachment.URL); err != nil {
+			return err
+		}
+		if err := ensureMaxLen(fmt.Sprintf("attachment %d url", index+1), attachment.URL, MaxLessonFileURLLen); err != nil {
+			return err
+		}
+		if !strings.HasPrefix(attachment.URL, "data:") && !strings.HasPrefix(attachment.URL, "https://") && !strings.HasPrefix(attachment.URL, "http://") {
+			return fmt.Errorf("attachment %d has invalid url format", index+1)
+		}
+	}
+	return nil
 }
 
 func validateAvatarURL(avatarURL string) error {

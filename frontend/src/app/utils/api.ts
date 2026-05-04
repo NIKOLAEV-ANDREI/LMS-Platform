@@ -40,8 +40,17 @@ export interface Lesson {
   content: string;
   type: 'text' | 'video' | 'test';
   videoUrl?: string;
+  attachments?: LessonAttachment[];
   test?: Test;
   order: number;
+}
+
+export interface LessonAttachment {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  url: string;
 }
 
 export interface Test {
@@ -115,6 +124,10 @@ class API {
     { test: /student is not enrolled in this course/i, value: 'Студент не записан на этот курс' },
     { test: /progress not found/i, value: 'Прогресс по курсу не найден' },
     { test: /lesson type must be text, video or test/i, value: 'Тип урока должен быть: текстовый, видео или тест' },
+    { test: /attachments are allowed only for text and video lessons/i, value: 'Файлы можно прикреплять только к текстовому или видео-уроку' },
+    { test: /too many attachments \(max \d+\)/i, value: 'Превышено максимально допустимое количество файлов' },
+    { test: /attachment \d+ size must be 0\.\.\d+ bytes/i, value: 'Один из файлов превышает допустимый размер' },
+    { test: /attachment \d+ has invalid url format/i, value: 'Некорректный формат прикрепленного файла' },
     { test: /test lesson must have at least one question/i, value: 'Тестовый урок должен содержать минимум один вопрос' },
     { test: /question (\d+) type must be single, multiple or open/i, value: 'Укажите корректный тип вопроса (single, multiple или open)' },
     { test: /question (\d+) must have at least 2 options/i, value: 'В вопросе должно быть минимум 2 варианта ответа' },
@@ -192,6 +205,15 @@ class API {
                 content: l.content || '',
                 type: l.type || 'text',
                 videoUrl: l.video_url || l.videoUrl || '',
+                attachments: Array.isArray(l.attachments)
+                  ? l.attachments.map((a: any) => ({
+                      id: String(a.id || ''),
+                      name: String(a.name || ''),
+                      contentType: String(a.contentType || a.content_type || ''),
+                      size: Number(a.size || 0),
+                      url: String(a.url || ''),
+                    }))
+                  : [],
                 test: l.test && Array.isArray(l.test.questions)
                   ? {
                       questions: l.test.questions.map((q: any) => ({
@@ -580,6 +602,7 @@ class API {
         type: lesson.type,
         videoUrl: lesson.videoUrl,
         test: lesson.test,
+        attachments: lesson.attachments,
       }),
     });
     return { success: true, lesson: created };
@@ -594,6 +617,7 @@ class API {
         type: lesson.type,
         videoUrl: lesson.videoUrl,
         test: lesson.test,
+        attachments: lesson.attachments,
       }),
     });
     return { success: true, lesson: updated };
@@ -615,6 +639,7 @@ class API {
         type: lesson.type,
         videoUrl: lesson.videoUrl,
         test: lesson.test,
+        attachments: lesson.attachments,
       }),
     });
     return { success: true, lesson: created };
@@ -629,6 +654,7 @@ class API {
         type: lesson.type,
         videoUrl: lesson.videoUrl,
         test: lesson.test,
+        attachments: lesson.attachments,
       }),
     });
     return { success: true, lesson: updated };

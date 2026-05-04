@@ -396,7 +396,7 @@ func (s *CourseService) AddModuleByAdmin(courseID int64, title, description stri
 	return module, nil
 }
 
-func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -409,6 +409,9 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if err := validateLessonAttachments(lessonType, attachments); err != nil {
+		return nil, err
 	}
 	if lessonType == "test" {
 		if err := validateLessonTestData(test); err != nil {
@@ -439,12 +442,13 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 	}
 
 	lesson := &domain.Lesson{
-		ModuleID: moduleID,
-		Title:    title,
-		Content:  content,
-		Type:     lessonType,
-		VideoURL: videoURL,
-		Test:     test,
+		ModuleID:    moduleID,
+		Title:       title,
+		Content:     content,
+		Type:        lessonType,
+		VideoURL:    videoURL,
+		Attachments: attachments,
+		Test:        test,
 	}
 	if err := s.courses.AddLesson(lesson); err != nil {
 		return nil, err
@@ -452,7 +456,7 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 	return lesson, nil
 }
 
-func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -465,6 +469,9 @@ func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, conten
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if err := validateLessonAttachments(lessonType, attachments); err != nil {
+		return nil, err
 	}
 	if lessonType == "test" {
 		if err := validateLessonTestData(test); err != nil {
@@ -492,12 +499,13 @@ func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, conten
 	}
 
 	lesson := &domain.Lesson{
-		ModuleID: moduleID,
-		Title:    title,
-		Content:  content,
-		Type:     lessonType,
-		VideoURL: videoURL,
-		Test:     test,
+		ModuleID:    moduleID,
+		Title:       title,
+		Content:     content,
+		Type:        lessonType,
+		VideoURL:    videoURL,
+		Attachments: attachments,
+		Test:        test,
 	}
 	if err := s.courses.AddLesson(lesson); err != nil {
 		return nil, err
@@ -633,7 +641,7 @@ func (s *CourseService) DeleteModuleByAdmin(courseID, moduleID int64) error {
 	return s.courses.DeleteModule(moduleID)
 }
 
-func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -646,6 +654,9 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if err := validateLessonAttachments(lessonType, attachments); err != nil {
+		return nil, err
 	}
 	if lessonType == "test" {
 		if err := validateLessonTestData(test); err != nil {
@@ -687,13 +698,14 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 	}
 
 	lesson := &domain.Lesson{
-		ID:       lessonID,
-		ModuleID: moduleID,
-		Title:    title,
-		Content:  content,
-		Type:     lessonType,
-		VideoURL: videoURL,
-		Test:     test,
+		ID:          lessonID,
+		ModuleID:    moduleID,
+		Title:       title,
+		Content:     content,
+		Type:        lessonType,
+		VideoURL:    videoURL,
+		Attachments: attachments,
+		Test:        test,
 	}
 	if err := s.courses.UpdateLesson(lesson); err != nil {
 		return nil, err
@@ -701,7 +713,7 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 	return lesson, nil
 }
 
-func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, test *domain.LessonTest) (*domain.Lesson, error) {
+func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, title, content, lessonType, videoURL string, attachments []domain.LessonAttachment, test *domain.LessonTest) (*domain.Lesson, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	videoURL = strings.TrimSpace(videoURL)
@@ -714,6 +726,9 @@ func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, 
 	}
 	if lessonType != "text" && lessonType != "video" && lessonType != "test" {
 		return nil, errors.New("lesson type must be text, video or test")
+	}
+	if err := validateLessonAttachments(lessonType, attachments); err != nil {
+		return nil, err
 	}
 	if lessonType == "test" {
 		if err := validateLessonTestData(test); err != nil {
@@ -752,13 +767,14 @@ func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, 
 	}
 
 	lesson := &domain.Lesson{
-		ID:       lessonID,
-		ModuleID: moduleID,
-		Title:    title,
-		Content:  content,
-		Type:     lessonType,
-		VideoURL: videoURL,
-		Test:     test,
+		ID:          lessonID,
+		ModuleID:    moduleID,
+		Title:       title,
+		Content:     content,
+		Type:        lessonType,
+		VideoURL:    videoURL,
+		Attachments: attachments,
+		Test:        test,
 	}
 	if err := s.courses.UpdateLesson(lesson); err != nil {
 		return nil, err

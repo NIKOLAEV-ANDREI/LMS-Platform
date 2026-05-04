@@ -824,18 +824,19 @@ func (h *Handler) addLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title    string             `json:"title"`
-		Content  string             `json:"content"`
-		Type     string             `json:"type"`
-		VideoURL string             `json:"videoUrl"`
-		Test     *domain.LessonTest `json:"test"`
+		Title       string                    `json:"title"`
+		Content     string                    `json:"content"`
+		Type        string                    `json:"type"`
+		VideoURL    string                    `json:"videoUrl"`
+		Attachments []domain.LessonAttachment `json:"attachments"`
+		Test        *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
-	lesson, err := h.course.AddLessonByTeacher(teacherID, courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.Test)
+	lesson, err := h.course.AddLessonByTeacher(teacherID, courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -909,18 +910,19 @@ func (h *Handler) updateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title    string             `json:"title"`
-		Content  string             `json:"content"`
-		Type     string             `json:"type"`
-		VideoURL string             `json:"videoUrl"`
-		Test     *domain.LessonTest `json:"test"`
+		Title       string                    `json:"title"`
+		Content     string                    `json:"content"`
+		Type        string                    `json:"type"`
+		VideoURL    string                    `json:"videoUrl"`
+		Attachments []domain.LessonAttachment `json:"attachments"`
+		Test        *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
-	lesson, err := h.course.UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.Test)
+	lesson, err := h.course.UpdateLessonByTeacher(teacherID, courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1031,17 +1033,18 @@ func (h *Handler) addLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title    string             `json:"title"`
-		Content  string             `json:"content"`
-		Type     string             `json:"type"`
-		VideoURL string             `json:"videoUrl"`
-		Test     *domain.LessonTest `json:"test"`
+		Title       string                    `json:"title"`
+		Content     string                    `json:"content"`
+		Type        string                    `json:"type"`
+		VideoURL    string                    `json:"videoUrl"`
+		Attachments []domain.LessonAttachment `json:"attachments"`
+		Test        *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	lesson, err := h.course.AddLessonByAdmin(courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.Test)
+	lesson, err := h.course.AddLessonByAdmin(courseID, moduleID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1066,17 +1069,18 @@ func (h *Handler) updateLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title    string             `json:"title"`
-		Content  string             `json:"content"`
-		Type     string             `json:"type"`
-		VideoURL string             `json:"videoUrl"`
-		Test     *domain.LessonTest `json:"test"`
+		Title       string                    `json:"title"`
+		Content     string                    `json:"content"`
+		Type        string                    `json:"type"`
+		VideoURL    string                    `json:"videoUrl"`
+		Attachments []domain.LessonAttachment `json:"attachments"`
+		Test        *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	lesson, err := h.course.UpdateLessonByAdmin(courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.Test)
+	lesson, err := h.course.UpdateLessonByAdmin(courseID, moduleID, lessonID, req.Title, req.Content, req.Type, req.VideoURL, req.Attachments, req.Test)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

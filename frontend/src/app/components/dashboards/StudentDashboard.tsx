@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
 import { api, Course, Progress as CourseProgress, User } from "../../utils/api";
+import { LIMITS } from "../../utils/limits";
 import { formatRuCount } from "../../utils/plural";
 
 export default function StudentDashboard() {
@@ -60,6 +61,14 @@ export default function StudentDashboard() {
         accessPassword = entered.trim();
         if (!accessPassword) {
           toast.error("Введите пароль курса");
+          return;
+        }
+        if (accessPassword.length < LIMITS.courseAccessPasswordMin) {
+          toast.error(`Пароль курса должен содержать минимум ${LIMITS.courseAccessPasswordMin} символа`);
+          return;
+        }
+        if (accessPassword.length > LIMITS.courseAccessPassword) {
+          toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
           return;
         }
       }

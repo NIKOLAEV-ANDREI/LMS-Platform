@@ -177,11 +177,15 @@ export default function AdminUserPage() {
       return;
     }
 
-    const password = window.prompt("Введите пароль для курса (до 10 символов):", "");
+    const password = window.prompt("Введите пароль для курса (от 4 до 10 символов):", "");
     if (password === null) return;
     const normalized = password.trim();
     if (!normalized) {
       toast.error("Введите пароль курса");
+      return;
+    }
+    if (normalized.length < LIMITS.courseAccessPasswordMin) {
+      toast.error(`Пароль курса должен содержать минимум ${LIMITS.courseAccessPasswordMin} символа`);
       return;
     }
     if (normalized.length > LIMITS.courseAccessPassword) {

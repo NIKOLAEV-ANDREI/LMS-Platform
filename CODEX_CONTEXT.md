@@ -1366,3 +1366,103 @@ Verification:
 - `go test ./...` passed
 - `npm run check:encoding` passed
 - `npm run build` passed
+
+## 68) Course password length updated to 4..10 (2026-05-04)
+Adjusted course access password constraints from max-only to range 4..10 symbols.
+
+What changed:
+- Backend validation (`validateCourseAccessPassword`) now enforces:
+  - minimum length: 4
+  - maximum length: 10
+- Frontend limits updated:
+  - `LIMITS.courseAccessPasswordMin = 4`
+  - `LIMITS.courseAccessPassword = 10`
+- Updated all relevant UI checks/messages for teacher/admin/student flows:
+  - set password prompt text now says `от 4 до 10 символов`
+  - added client-side min/max checks before API calls
+  - same checks applied for student enrollment and password unlock on course page.
+
+Updated files:
+- `backend/internal/service/field_limits.go`
+- `frontend/src/app/utils/limits.ts`
+- `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+- `frontend/src/app/components/Profile.tsx`
+- `frontend/src/app/components/dashboards/AdminUserPage.tsx`
+- `frontend/src/app/components/dashboards/StudentDashboard.tsx`
+- `frontend/src/app/components/teachers/TeacherPublicProfilePage.tsx`
+- `frontend/src/app/components/courses/CoursePage.tsx`
+
+Verification:
+- `gofmt -w backend/internal/service/field_limits.go`
+- `go test ./...` passed
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 69) Lesson attachments for text/video lessons (teacher + admin) (2026-05-04)
+Implemented file attachment support for lesson editing and viewing.
+
+Backend:
+- Added lesson attachment model in domain:
+  - `Lesson.attachments[]` with fields: `id`, `name`, `contentType`, `size`, `url`.
+- DB migration updated:
+  - `lessons.attachments JSONB NOT NULL DEFAULT '[]'::jsonb`.
+- Postgres repository updated:
+  - saves attachments on lesson create/update
+  - loads attachments in lesson queries.
+- Service validation added for attachments:
+  - allowed only for `text` and `video` lessons
+  - max files per lesson: 5
+  - max file size: 15 MB each
+  - validates id/name/contentType/url and URL format.
+- Teacher/admin lesson endpoints now accept `attachments` in payload for both create and update.
+
+Frontend:
+- API models and mapping updated:
+  - `LessonAttachment` type
+  - `Lesson.attachments` support in `mapCourse`
+  - `attachments` are sent in add/update lesson requests for teacher and admin.
+- Lesson editor (`LessonEditor.tsx`):
+  - added file picker for text/video lessons
+  - add/remove attached files
+  - local limits (5 files, 15 MB each)
+  - files are converted to data URL and stored in lesson payload
+  - attachments are included in local draft autosave/restore.
+- Lesson viewer (`LessonViewer.tsx`):
+  - renders attachment list for text/video lessons
+  - each file can be opened/downloaded.
+- Added RU localization for new attachment-related backend error messages in API client.
+
+Updated files:
+- `backend/internal/domain/models.go`
+- `backend/internal/db/migrate.go`
+- `backend/internal/repository/postgres/course_repo.go`
+- `backend/internal/service/field_limits.go`
+- `backend/internal/service/course_service.go`
+- `backend/internal/handler/http/handler.go`
+- `frontend/src/app/utils/api.ts`
+- `frontend/src/app/utils/limits.ts`
+- `frontend/src/app/components/courses/LessonEditor.tsx`
+- `frontend/src/app/components/courses/LessonViewer.tsx`
+
+Verification:
+- `gofmt -w` on changed Go files
+- `go test ./...` passed
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 70) Encoding hotfix for lesson pages after attachments update (2026-05-04)
+Fixed frontend mojibake regression on lesson editor/viewer pages.
+
+Root cause:
+- Files were accidentally re-saved in Windows ANSI during a quick text replace, while app expects UTF-8 source files.
+- As a result, Russian UI labels on lesson screens were rendered as broken symbols.
+
+Fix applied:
+- Re-encoded files to UTF-8 (without BOM):
+  - `frontend/src/app/components/courses/LessonEditor.tsx`
+  - `frontend/src/app/components/courses/LessonViewer.tsx`
+- Cleaned residual test-result labels in lesson viewer (removed stray `?` prefixes).
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed

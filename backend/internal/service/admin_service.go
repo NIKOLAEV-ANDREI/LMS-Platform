@@ -21,6 +21,20 @@ func NewAdminService(users repository.UserRepository, courses repository.CourseR
 func (s *AdminService) ListUsers() ([]domain.User, error) { return s.users.List() }
 
 func (s *AdminService) BlockUser(id int64, blocked bool) error {
+	if blocked {
+		teacherCourses, err := s.courses.ListByTeacher(id)
+		if err != nil {
+			return err
+		}
+		for _, course := range teacherCourses {
+			if course.Status != "approved" {
+				continue
+			}
+			if err := s.courses.SetStatus(course.ID, "pending"); err != nil {
+				return err
+			}
+		}
+	}
 	return s.users.SetBlocked(id, blocked)
 }
 

@@ -1,6 +1,6 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Award, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Award, CheckCircle, Download, Paperclip, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import { Badge } from "../ui/badge";
@@ -102,9 +102,97 @@ export default function LessonViewer() {
     }
   };
 
-  const getVideoEmbedUrl = (url: string) => {
-    const videoId = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/)?.[1];
-    return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+  const getVideoEmbedUrl = (rawUrl: string) => {
+    const normalize = (value: string) => {
+      try {
+        return new URL(value);
+      } catch {
+        try {
+          return new URL(`https://${value}`);
+        } catch {
+          return null;
+        }
+      }
+    };
+
+    const parsed = normalize(rawUrl.trim());
+    if (!parsed) return "";
+
+    const host = parsed.hostname.toLowerCase();
+    const hostWithoutWww = host.replace(/^www\./, "");
+    const path = parsed.pathname;
+
+    if (hostWithoutWww === "youtu.be") {
+      const videoId = path.split("/").filter(Boolean)[0];
+      return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+    }
+
+    if (hostWithoutWww.endsWith("youtube.com")) {
+      if (path.startsWith("/embed/")) {
+        const videoId = path.split("/")[2];
+        return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+      }
+
+      if (path.startsWith("/shorts/")) {
+        const videoId = path.split("/")[2];
+        return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+      }
+
+      const videoId = parsed.searchParams.get("v");
+      return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+    }
+
+    if (hostWithoutWww.endsWith("rutube.ru")) {
+      const embedMatch = path.match(/\/play\/embed\/([a-zA-Z0-9]+)/);
+      if (embedMatch?.[1]) {
+        const privateKey = parsed.searchParams.get("p");
+        return privateKey
+          ? `https://rutube.ru/play/embed/${embedMatch[1]}/?p=${encodeURIComponent(privateKey)}`
+          : `https://rutube.ru/play/embed/${embedMatch[1]}/`;
+      }
+
+      const videoMatch = path.match(/\/video\/(?:private\/)?([a-zA-Z0-9]+)/);
+      if (videoMatch?.[1]) {
+        const privateKey = parsed.searchParams.get("p");
+        return privateKey
+          ? `https://rutube.ru/play/embed/${videoMatch[1]}/?p=${encodeURIComponent(privateKey)}`
+          : `https://rutube.ru/play/embed/${videoMatch[1]}/`;
+      }
+    }
+
+    if (hostWithoutWww.endsWith("vk.com") || hostWithoutWww.endsWith("vkvideo.ru")) {
+      if (path.includes("video_ext.php")) {
+        const oid = parsed.searchParams.get("oid");
+        const id = parsed.searchParams.get("id");
+        if (oid && id) {
+          const params = new URLSearchParams({ oid, id });
+          const hash = parsed.searchParams.get("hash");
+          const hd = parsed.searchParams.get("hd");
+          if (hash) params.set("hash", hash);
+          if (hd) params.set("hd", hd);
+          return `https://vk.com/video_ext.php?${params.toString()}`;
+        }
+      }
+
+      let videoCompound = path.match(/\/video(-?\d+_\d+)/)?.[1] || "";
+      if (!videoCompound) {
+        const zParam = parsed.searchParams.get("z");
+        if (zParam) {
+          const decoded = decodeURIComponent(zParam);
+          videoCompound = decoded.match(/video(-?\d+_\d+)/)?.[1] || "";
+        }
+      }
+
+      if (videoCompound) {
+        const [oid, id] = videoCompound.split("_");
+        if (oid && id) {
+          const params = new URLSearchParams({ oid, id, hd: "2" });
+          return `https://vk.com/video_ext.php?${params.toString()}`;
+        }
+      }
+    }
+
+    return "";
   };
 
   const allAnswered = useMemo(() => testAnswers.length > 0 && testAnswers.every((item) => item !== null), [testAnswers]);
@@ -131,6 +219,8 @@ export default function LessonViewer() {
 
   const renderedContent = sanitizeRichText(lesson.content || "");
   const hasRichMarkup = /<\/?[a-z][\s\S]*>/i.test(renderedContent);
+  const videoEmbedUrl = lesson.type === "video" && lesson.videoUrl ? getVideoEmbedUrl(lesson.videoUrl) : "";
+  const lessonAttachments = Array.isArray(lesson.attachments) ? lesson.attachments : [];
 
   return (
     <Layout>
@@ -154,11 +244,38 @@ export default function LessonViewer() {
 
           <CardContent className="space-y-6">
             {lesson.type === "text" && (
-              <div className="rich-text-content">
-                {hasRichMarkup ? (
-                  <div dangerouslySetInnerHTML={{ __html: renderedContent }} />
-                ) : (
-                  <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">{lesson.content}</p>
+              <div className="space-y-4">
+                <div className="rich-text-content">
+                  {hasRichMarkup ? (
+                    <div dangerouslySetInnerHTML={{ __html: renderedContent }} />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">{lesson.content}</p>
+                  )}
+                </div>
+                {lessonAttachments.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Paperclip className="h-4 w-4 text-primary" />
+                        Материалы урока
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {lessonAttachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.url}
+                          download={attachment.name}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-muted/30"
+                        >
+                          <span className="truncate pr-2">{attachment.name}</span>
+                          <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </a>
+                      ))}
+                    </CardContent>
+                  </Card>
                 )}
               </div>
             )}
@@ -166,14 +283,26 @@ export default function LessonViewer() {
             {lesson.type === "video" && (
               <div className="space-y-4">
                 {lesson.videoUrl && (
-                  <div className="aspect-video overflow-hidden rounded-lg bg-black">
-                    <iframe
-                      src={getVideoEmbedUrl(lesson.videoUrl)}
-                      className="h-full w-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
+                  <>
+                    {videoEmbedUrl ? (
+                      <div className="aspect-video overflow-hidden rounded-lg bg-black">
+                        <iframe
+                          src={videoEmbedUrl}
+                          className="h-full w-full"
+                          allow="autoplay; encrypted-media; clipboard-write; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    ) : (
+                      <Card className="border-amber-300 bg-amber-50">
+                        <CardContent className="pt-6">
+                          <p className="text-amber-900">
+                            Ссылка на видео не распознана. Поддерживаются YouTube, VK Video и RuTube.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
                 )}
                 {lesson.content && (
                   <div className="rich-text-content">
@@ -183,6 +312,31 @@ export default function LessonViewer() {
                       <p className="whitespace-pre-wrap text-base leading-relaxed break-words [overflow-wrap:anywhere]">{lesson.content}</p>
                     )}
                   </div>
+                )}
+                {lessonAttachments.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Paperclip className="h-4 w-4 text-primary" />
+                        Файлы к видео
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {lessonAttachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.url}
+                          download={attachment.name}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-muted/30"
+                        >
+                          <span className="truncate pr-2">{attachment.name}</span>
+                          <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </a>
+                      ))}
+                    </CardContent>
+                  </Card>
                 )}
               </div>
             )}
@@ -295,8 +449,8 @@ export default function LessonViewer() {
                                   }`}
                                 >
                                   {option}
-                                  {isCorrectAnswer && <span className="ml-2 font-medium text-green-600">✓ Правильный ответ</span>}
-                                  {isUserAnswer && !isCorrectAnswer && <span className="ml-2 font-medium text-red-600">✗ Ваш ответ</span>}
+                                  {isCorrectAnswer && <span className="ml-2 font-medium text-green-600">Правильный ответ</span>}
+                                  {isUserAnswer && !isCorrectAnswer && <span className="ml-2 font-medium text-red-600">Ваш ответ</span>}
                                 </div>
                               );
                             })}

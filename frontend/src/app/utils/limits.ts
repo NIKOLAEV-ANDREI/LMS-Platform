@@ -8,6 +8,7 @@ export const LIMITS = {
 
   courseTitle: 120,
   courseDescription: 2000,
+  courseAccessPasswordMin: 4,
   courseAccessPassword: 10,
   imageUrl: 2048,
 
@@ -17,6 +18,8 @@ export const LIMITS = {
   lessonTitle: 150,
   lessonContent: 10000,
   videoUrl: 2048,
+  lessonAttachmentsMaxCount: 5,
+  lessonAttachmentMaxSize: 15 * 1024 * 1024,
 
   questionText: 500,
   questionOption: 200,

@@ -160,10 +160,14 @@ func (r *CourseRepo) AddLesson(lesson *domain.Lesson) error {
 	if err != nil {
 		return err
 	}
+	attachmentsData, err := json.Marshal(lesson.Attachments)
+	if err != nil {
+		return err
+	}
 
 	return r.db.QueryRow(
-		`INSERT INTO lessons(module_id,title,content,lesson_type,video_url,test_data,sort_order) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-		lesson.ModuleID, lesson.Title, lesson.Content, lesson.Type, lesson.VideoURL, testData, lesson.Order,
+		`INSERT INTO lessons(module_id,title,content,lesson_type,video_url,test_data,attachments,sort_order) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+		lesson.ModuleID, lesson.Title, lesson.Content, lesson.Type, lesson.VideoURL, testData, attachmentsData, lesson.Order,
 	).Scan(&lesson.ID)
 }
 
@@ -172,9 +176,13 @@ func (r *CourseRepo) UpdateLesson(lesson *domain.Lesson) error {
 	if err != nil {
 		return err
 	}
+	attachmentsData, err := json.Marshal(lesson.Attachments)
+	if err != nil {
+		return err
+	}
 	_, err = r.db.Exec(
-		`UPDATE lessons SET title=$1, content=$2, lesson_type=$3, video_url=$4, test_data=$5 WHERE id=$6`,
-		lesson.Title, lesson.Content, lesson.Type, lesson.VideoURL, testData, lesson.ID,
+		`UPDATE lessons SET title=$1, content=$2, lesson_type=$3, video_url=$4, test_data=$5, attachments=$6 WHERE id=$7`,
+		lesson.Title, lesson.Content, lesson.Type, lesson.VideoURL, testData, attachmentsData, lesson.ID,
 	)
 	return err
 }
@@ -257,7 +265,7 @@ func (r *CourseRepo) loadModules(courseID int64) ([]domain.Module, error) {
 
 func (r *CourseRepo) loadLessons(moduleID int64) ([]domain.Lesson, error) {
 	rows, err := r.db.Query(
-		`SELECT id,module_id,title,content,lesson_type,video_url,test_data,sort_order FROM lessons WHERE module_id=$1 ORDER BY sort_order ASC, id ASC`,
+		`SELECT id,module_id,title,content,lesson_type,video_url,test_data,attachments,sort_order FROM lessons WHERE module_id=$1 ORDER BY sort_order ASC, id ASC`,
 		moduleID,
 	)
 	if err != nil {
@@ -269,7 +277,8 @@ func (r *CourseRepo) loadLessons(moduleID int64) ([]domain.Lesson, error) {
 	for rows.Next() {
 		var l domain.Lesson
 		var testData []byte
-		if err := rows.Scan(&l.ID, &l.ModuleID, &l.Title, &l.Content, &l.Type, &l.VideoURL, &testData, &l.Order); err != nil {
+		var attachmentsData []byte
+		if err := rows.Scan(&l.ID, &l.ModuleID, &l.Title, &l.Content, &l.Type, &l.VideoURL, &testData, &attachmentsData, &l.Order); err != nil {
 			return nil, err
 		}
 		if len(testData) > 0 && string(testData) != "null" && string(testData) != "{}" {
@@ -278,6 +287,13 @@ func (r *CourseRepo) loadLessons(moduleID int64) ([]domain.Lesson, error) {
 				return nil, err
 			}
 			l.Test = &test
+		}
+		if len(attachmentsData) > 0 && string(attachmentsData) != "null" {
+			var attachments []domain.LessonAttachment
+			if err := json.Unmarshal(attachmentsData, &attachments); err != nil {
+				return nil, err
+			}
+			l.Attachments = attachments
 		}
 		lessons = append(lessons, l)
 	}

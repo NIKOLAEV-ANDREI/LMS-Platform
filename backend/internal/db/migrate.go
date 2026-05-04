@@ -45,9 +45,11 @@ func Migrate(db *sql.DB) error {
 			lesson_type TEXT NOT NULL CHECK(lesson_type IN ('text','video','test')),
 			video_url TEXT NOT NULL DEFAULT '',
 			test_data JSONB,
+			attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
 			sort_order INTEGER NOT NULL DEFAULT 0
 		);`,
 		`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS test_data JSONB;`,
+		`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;`,
 		`CREATE TABLE IF NOT EXISTS lesson_progress (
 			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			course_id BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
