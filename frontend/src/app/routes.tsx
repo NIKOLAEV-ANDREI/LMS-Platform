@@ -11,6 +11,7 @@ import CoursePage from "./components/courses/CoursePage";
 import CourseEditor from "./components/courses/CourseEditor";
 import LessonEditor from "./components/courses/LessonEditor";
 import LessonViewer from "./components/courses/LessonViewer";
+import TeacherPublicProfilePage from "./components/teachers/TeacherPublicProfilePage";
 import NotFound from "./components/NotFound";
 
 export const router = createBrowserRouter([
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
       { path: "admin/courses/:courseId/lessons/:lessonId/edit", Component: LessonEditor },
       { path: "profile", Component: Profile },
       { path: "courses/:id", Component: CoursePage },
+      { path: "teachers/:id", Component: TeacherPublicProfilePage },
       { path: "courses/:id/edit", Component: CourseEditor },
       { path: "courses/:courseId/lessons/:lessonId/edit", Component: LessonEditor },
       { path: "courses/:courseId/lessons/:lessonId", Component: LessonViewer },

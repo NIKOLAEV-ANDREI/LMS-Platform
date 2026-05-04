@@ -51,6 +51,22 @@ func (s *CourseService) ListTeacherDeletedCourses(teacherID int64) ([]domain.Cou
 	return s.courses.ListDeletedByTeacher(teacherID)
 }
 
+func (s *CourseService) ListTeacherPublishedCourses(teacherID int64) ([]domain.Course, error) {
+	courses, err := s.courses.ListByTeacher(teacherID)
+	if err != nil {
+		return nil, err
+	}
+
+	published := make([]domain.Course, 0, len(courses))
+	for _, course := range courses {
+		if course.Status == "approved" {
+			published = append(published, course)
+		}
+	}
+
+	return published, nil
+}
+
 func (s *CourseService) Enroll(studentID, courseID int64) error {
 	return s.enrollments.Enroll(studentID, courseID)
 }

@@ -37,6 +37,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.Get("/dashboard", h.dashboard)
 			p.Get("/courses", h.listCourses)
 			p.Get("/courses/{courseID}", h.courseByID)
+			p.Get("/teachers/{teacherID}/profile", h.teacherPublicProfile)
 			p.Post("/courses/{courseID}/enroll", h.enroll)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Delete("/courses/{courseID}/enroll", h.unenroll)
 			p.Patch("/courses/{courseID}/progress", h.updateProgress)
@@ -333,6 +334,44 @@ func (h *Handler) courseByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, course)
+}
+
+func (h *Handler) teacherPublicProfile(w http.ResponseWriter, r *http.Request) {
+	teacherID, err := strconv.ParseInt(chi.URLParam(r, "teacherID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	teacher, err := h.admin.UserByID(teacherID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if teacher == nil {
+		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if teacher.Role != domain.RoleTeacher {
+		writeErr(w, http.StatusBadRequest, "invalid role")
+		return
+	}
+
+	courses, err := h.course.ListTeacherPublishedCourses(teacherID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"teacher": map[string]any{
+			"id":         teacher.ID,
+			"name":       teacher.Name,
+			"email":      teacher.Email,
+			"avatar_url": teacher.AvatarURL,
+		},
+		"courses": courses,
+	})
 }
 
 func (h *Handler) enroll(w http.ResponseWriter, r *http.Request) {

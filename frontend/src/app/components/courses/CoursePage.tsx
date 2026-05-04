@@ -141,9 +141,14 @@ export default function CoursePage() {
             </div>
           </div>
 
-          <div className="mt-4 flex items-start gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">Преподаватель:</span>
             <span className="font-medium break-words [overflow-wrap:anywhere]">{course.teacherName}</span>
+            <Link to={`/teachers/${course.teacherId}`}>
+              <Button type="button" variant="outline" size="sm">
+                Профиль
+              </Button>
+            </Link>
           </div>
         </div>
 

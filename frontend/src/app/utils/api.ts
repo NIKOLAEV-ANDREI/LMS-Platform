@@ -1,4 +1,4 @@
-export const API_BASE = import.meta.env.VITE_API_URL || '/api';
+﻿export const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export interface User {
   id: string;
@@ -71,10 +71,77 @@ export interface Progress {
   enrolledAt: string;
 }
 
+export interface TeacherPublicProfile {
+  teacher: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl?: string;
+  };
+  courses: Course[];
+}
+
 class API {
   private token: string | null = null;
   private readonly tokenKey = 'auth_token';
   private readonly userKey = 'auth_user';
+  private readonly errorTranslations: Array<{ test: RegExp; value: string }> = [
+    { test: /^Request failed$/i, value: 'Ошибка запроса к серверу' },
+    { test: /^invalid json$/i, value: 'Некорректный JSON в запросе' },
+    { test: /^invalid credentials$/i, value: 'Неверный email или пароль' },
+    { test: /user is blocked/i, value: 'Пользователь заблокирован' },
+    { test: /missing auth header/i, value: 'Отсутствует заголовок авторизации' },
+    { test: /invalid auth header/i, value: 'Некорректный заголовок авторизации' },
+    { test: /authorization header is missing/i, value: 'Отсутствует токен авторизации' },
+    { test: /token is invalid/i, value: 'Недействительный токен авторизации' },
+    { test: /^invalid token$/i, value: 'Недействительный токен авторизации' },
+    { test: /invalid signing method/i, value: 'Недействительный токен авторизации' },
+    { test: /invalid token claims/i, value: 'Некорректные данные токена' },
+    { test: /role not found/i, value: 'Роль пользователя не определена' },
+    { test: /email already exists/i, value: 'Пользователь с таким email уже существует' },
+    { test: /user already exists/i, value: 'Пользователь с таким email уже существует' },
+    { test: /public registration allows only student or teacher/i, value: 'При открытой регистрации доступны только роли студент и преподаватель' },
+    { test: /invalid role/i, value: 'Некорректная роль пользователя' },
+    { test: /user not found/i, value: 'Пользователь не найден' },
+    { test: /course not found/i, value: 'Курс не найден' },
+    { test: /invalid user id/i, value: 'Некорректный ID пользователя' },
+    { test: /invalid course id/i, value: 'Некорректный ID курса' },
+    { test: /invalid module id/i, value: 'Некорректный ID модуля' },
+    { test: /invalid lesson id/i, value: 'Некорректный ID урока' },
+    { test: /module not found in course/i, value: 'Модуль не найден в курсе' },
+    { test: /lesson not found in module/i, value: 'Урок не найден в модуле' },
+    { test: /lesson not found in this course/i, value: 'Урок не найден в этом курсе' },
+    { test: /student is not enrolled in this course/i, value: 'Студент не записан на этот курс' },
+    { test: /progress not found/i, value: 'Прогресс по курсу не найден' },
+    { test: /lesson type must be text, video or test/i, value: 'Тип урока должен быть: текстовый, видео или тест' },
+    { test: /test lesson must have at least one question/i, value: 'Тестовый урок должен содержать минимум один вопрос' },
+    { test: /question (\d+) type must be single, multiple or open/i, value: 'Укажите корректный тип вопроса (single, multiple или open)' },
+    { test: /question (\d+) must have at least 2 options/i, value: 'В вопросе должно быть минимум 2 варианта ответа' },
+    { test: /avatar is too large/i, value: 'Аватар слишком большой' },
+    { test: /invalid avatar format/i, value: 'Недопустимый формат аватара' },
+    { test: /is required$/i, value: 'Заполните обязательное поле' },
+    { test: /is too long \(max \d+ chars\)$/i, value: 'Превышена максимальная длина поля' },
+    { test: /is too short \(min \d+ chars\)$/i, value: 'Значение слишком короткое' },
+    { test: /forbidden/i, value: 'Недостаточно прав для выполнения действия' },
+    { test: /progress must be 0\.\.100/i, value: 'Прогресс должен быть в диапазоне от 0 до 100' },
+  ];
+
+  private localizeErrorMessage(message: string): string {
+    const normalized = String(message || '').trim();
+    if (!normalized) return 'Произошла ошибка';
+
+    for (const translation of this.errorTranslations) {
+      if (translation.test.test(normalized)) {
+        return translation.value;
+      }
+    }
+
+    if (/[A-Za-z]/.test(normalized)) {
+      return 'Произошла ошибка на сервере';
+    }
+
+    return normalized;
+  }
 
   private saveUser(user: User | null) {
     if (user) {
@@ -148,7 +215,7 @@ class API {
       description: raw.description,
       imageUrl: raw.imageUrl || '',
       teacherId: String(raw.teacher_id),
-      teacherName: raw.teacher_name || raw.teacherName || `Teacher #${raw.teacher_id}`,
+      teacherName: raw.teacher_name || raw.teacherName || `Преподаватель #${raw.teacher_id}`,
       createdAt: raw.createdAt || new Date().toISOString(),
       modules,
       enrolledStudents: Array.isArray(raw.enrolledStudents) ? raw.enrolledStudents : [],
@@ -189,15 +256,28 @@ class API {
         headers,
       });
 
-      const data = await response.json().catch(() => ({}));
+      const bodyText = await response.text();
+      let data: any = {};
+      if (bodyText) {
+        try {
+          data = JSON.parse(bodyText);
+        } catch {
+          data = {};
+        }
+      }
+
       if (!response.ok) {
-        throw new Error(data.error || 'Request failed');
+        const rawError = String(data.error || data.message || bodyText || 'Request failed');
+        throw new Error(this.localizeErrorMessage(rawError));
       }
 
       return data;
     } catch (error) {
       if (error instanceof TypeError) {
-        throw new Error('Backend недоступен: проверь запуск Go API на localhost:8080');
+        throw new Error('Бэкенд недоступен: проверь запуск Go API на localhost:8080');
+      }
+      if (error instanceof Error) {
+        throw new Error(this.localizeErrorMessage(error.message));
       }
       throw error;
     }
@@ -295,6 +375,19 @@ class API {
     return { course: this.mapCourse(course) };
   }
 
+  async getTeacherPublicProfile(teacherId: string): Promise<TeacherPublicProfile> {
+    const data = await this.request(`/teachers/${teacherId}/profile`);
+    return {
+      teacher: {
+        id: String(data.teacher?.id || teacherId),
+        name: String(data.teacher?.name || "Преподаватель"),
+        email: String(data.teacher?.email || ""),
+        avatarUrl: data.teacher?.avatar_url || "",
+      },
+      courses: (data.courses || []).map((course: any) => this.mapCourse(course)),
+    };
+  }
+
   async createCourse(title: string, description: string, _imageUrl?: string) {
     const course = await this.request('/teacher/courses', {
       method: 'POST',
@@ -366,7 +459,7 @@ class API {
   }
 
   async updateCourse(_id: string, _updates: Partial<Course>) {
-    throw new Error('Use role-specific updateCourse methods');
+    throw new Error('Используйте методы обновления курса для конкретной роли');
   }
 
   async enrollCourse(id: string) {
@@ -584,7 +677,7 @@ class API {
   }
 
   async getStudentsProgress(_courseId: string) {
-    throw new Error('Аналитика по студентам пока не реализована в backend MVP');
+    throw new Error('Аналитика по студентам пока не реализована на бэкенде');
   }
 
   async getAllUsers() {
@@ -688,3 +781,5 @@ class API {
 }
 
 export const api = new API();
+
+
