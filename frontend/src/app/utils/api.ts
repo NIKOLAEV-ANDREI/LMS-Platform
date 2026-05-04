@@ -23,6 +23,7 @@ export interface Course {
   modules: Module[];
   enrolledStudents: string[];
   status?: string;
+  hasPassword?: boolean;
 }
 
 export interface Module {
@@ -124,6 +125,8 @@ class API {
     { test: /is too short \(min \d+ chars\)$/i, value: 'Значение слишком короткое' },
     { test: /forbidden/i, value: 'Недостаточно прав для выполнения действия' },
     { test: /progress must be 0\.\.100/i, value: 'Прогресс должен быть в диапазоне от 0 до 100' },
+    { test: /course password required/i, value: 'Требуется пароль курса' },
+    { test: /invalid course password/i, value: 'Неверный пароль курса' },
   ];
 
   private localizeErrorMessage(message: string): string {
@@ -220,6 +223,7 @@ class API {
       modules,
       enrolledStudents: Array.isArray(raw.enrolledStudents) ? raw.enrolledStudents : [],
       status: raw.status,
+      hasPassword: Boolean(raw.has_password ?? raw.hasPassword),
     };
   }
 
@@ -370,8 +374,12 @@ class API {
     return { courses: (courses || []).map((c: any) => this.mapCourse(c)) };
   }
 
-  async getCourse(id: string): Promise<{ course: Course }> {
-    const course = await this.request(`/courses/${id}`);
+  async getCourse(id: string, accessPassword?: string): Promise<{ course: Course }> {
+    const headers: HeadersInit = {};
+    if (accessPassword) {
+      headers["X-Course-Password"] = accessPassword;
+    }
+    const course = await this.request(`/courses/${id}`, { headers });
     return { course: this.mapCourse(course) };
   }
 
@@ -458,13 +466,40 @@ class API {
     return { success: true };
   }
 
+  async setCoursePassword(courseId: string, password: string) {
+    await this.request(`/teacher/courses/${courseId}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+    return { success: true };
+  }
+
+  async clearCoursePassword(courseId: string) {
+    await this.request(`/teacher/courses/${courseId}/password`, { method: 'DELETE' });
+    return { success: true };
+  }
+
+  async setCoursePasswordByAdmin(courseId: string, password: string) {
+    await this.request(`/admin/courses/${courseId}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+    return { success: true };
+  }
+
+  async clearCoursePasswordByAdmin(courseId: string) {
+    await this.request(`/admin/courses/${courseId}/password`, { method: 'DELETE' });
+    return { success: true };
+  }
+
   async updateCourse(_id: string, _updates: Partial<Course>) {
     throw new Error('Используйте методы обновления курса для конкретной роли');
   }
 
-  async enrollCourse(id: string) {
+  async enrollCourse(id: string, accessPassword?: string) {
     await this.request(`/courses/${id}/enroll`, {
       method: 'POST',
+      body: JSON.stringify({ access_password: accessPassword || "" }),
     });
 
     const user = this.readUser();

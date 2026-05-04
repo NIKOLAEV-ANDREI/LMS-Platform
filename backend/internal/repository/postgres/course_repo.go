@@ -22,19 +22,22 @@ func (r *CourseRepo) Create(course *domain.Course) error {
 
 func (r *CourseRepo) ByID(courseID int64) (*domain.Course, error) {
 	var c domain.Course
+	var accessPasswordHash string
 	err := r.db.QueryRow(
-		`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status
+		`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
 		 FROM courses c
 		 LEFT JOIN users u ON u.id = c.teacher_id
 		 WHERE c.id=$1`,
 		courseID,
-	).Scan(&c.ID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherName, &c.Status)
+	).Scan(&c.ID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherName, &c.Status, &accessPasswordHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	c.AccessPasswordHash = accessPasswordHash
+	c.HasPassword = accessPasswordHash != ""
 
 	modules, err := r.loadModules(c.ID)
 	if err != nil {
@@ -45,7 +48,7 @@ func (r *CourseRepo) ByID(courseID int64) (*domain.Course, error) {
 }
 
 func (r *CourseRepo) ListApproved() ([]domain.Course, error) {
-	courses, err := r.listByQuery(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status
+	courses, err := r.listByQuery(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		WHERE c.status='approved' AND c.status <> 'rejected'
@@ -57,7 +60,7 @@ func (r *CourseRepo) ListApproved() ([]domain.Course, error) {
 }
 
 func (r *CourseRepo) ListByTeacher(teacherID int64) ([]domain.Course, error) {
-	rows, err := r.db.Query(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status
+	rows, err := r.db.Query(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		WHERE c.teacher_id=$1 AND c.status <> 'rejected'
@@ -74,7 +77,7 @@ func (r *CourseRepo) ListByTeacher(teacherID int64) ([]domain.Course, error) {
 }
 
 func (r *CourseRepo) ListDeletedByTeacher(teacherID int64) ([]domain.Course, error) {
-	rows, err := r.db.Query(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status
+	rows, err := r.db.Query(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		WHERE c.teacher_id=$1 AND c.status='rejected'
@@ -91,7 +94,7 @@ func (r *CourseRepo) ListDeletedByTeacher(teacherID int64) ([]domain.Course, err
 }
 
 func (r *CourseRepo) ListAll() ([]domain.Course, error) {
-	courses, err := r.listByQuery(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status
+	courses, err := r.listByQuery(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		ORDER BY c.id DESC`)
@@ -181,6 +184,16 @@ func (r *CourseRepo) DeleteLesson(lessonID int64) error {
 	return err
 }
 
+func (r *CourseRepo) SetAccessPasswordHash(courseID int64, passwordHash string) error {
+	_, err := r.db.Exec(`UPDATE courses SET access_password_hash=$1 WHERE id=$2`, passwordHash, courseID)
+	return err
+}
+
+func (r *CourseRepo) ClearAccessPassword(courseID int64) error {
+	_, err := r.db.Exec(`UPDATE courses SET access_password_hash='' WHERE id=$1`, courseID)
+	return err
+}
+
 func (r *CourseRepo) listByQuery(q string) ([]domain.Course, error) {
 	rows, err := r.db.Query(q)
 	if err != nil {
@@ -194,9 +207,12 @@ func scanCourses(rows *sql.Rows) ([]domain.Course, error) {
 	var courses []domain.Course
 	for rows.Next() {
 		var c domain.Course
-		if err := rows.Scan(&c.ID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherName, &c.Status); err != nil {
+		var accessPasswordHash string
+		if err := rows.Scan(&c.ID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherName, &c.Status, &accessPasswordHash); err != nil {
 			return nil, err
 		}
+		c.AccessPasswordHash = accessPasswordHash
+		c.HasPassword = accessPasswordHash != ""
 		courses = append(courses, c)
 	}
 	return courses, rows.Err()

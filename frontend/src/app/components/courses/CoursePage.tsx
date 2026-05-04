@@ -6,6 +6,7 @@ import Layout from "../Layout";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
 import { Progress } from "../ui/progress";
 import { api, Course, Progress as CourseProgress, User } from "../../utils/api";
 import { formatRuCount } from "../../utils/plural";
@@ -23,6 +24,9 @@ export default function CoursePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [openModuleId, setOpenModuleId] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [coursePassword, setCoursePassword] = useState("");
+  const [checkingPassword, setCheckingPassword] = useState(false);
 
   const moduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const openFromStateApplied = useRef(false);
@@ -31,15 +35,16 @@ export default function CoursePage() {
     loadData();
   }, [id]);
 
-  const loadData = async () => {
+  const loadData = async (accessPassword?: string) => {
     try {
       if (!id) return;
 
       const { user: userData } = await api.getSession();
       setUser(userData);
 
-      const { course: courseData } = await api.getCourse(id);
+      const { course: courseData } = await api.getCourse(id, accessPassword);
       setCourse(courseData);
+      setPasswordRequired(false);
 
       if (userData.role === "student" && userData.enrolledCourses.includes(id)) {
         const { progress: progressData } = await api.getProgress(id);
@@ -48,16 +53,48 @@ export default function CoursePage() {
         setProgress(null);
       }
     } catch (error: any) {
-      toast.error(error.message || "Ошибка загрузки курса");
+      const message = String(error?.message || "");
+      if (message === "Требуется пароль курса" || message === "Неверный пароль курса") {
+        setPasswordRequired(true);
+        if (message === "Неверный пароль курса") {
+          toast.error(message);
+        }
+      } else {
+        toast.error(error.message || "Ошибка загрузки курса");
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submitCoursePassword = async () => {
+    const normalized = coursePassword.trim();
+    if (!normalized) {
+      toast.error("Введите пароль курса");
+      return;
+    }
+    setCheckingPassword(true);
+    try {
+      await loadData(normalized);
+    } finally {
+      setCheckingPassword(false);
     }
   };
 
   const handleEnroll = async () => {
     if (!course) return;
     try {
-      await api.enrollCourse(course.id);
+      let accessPassword = "";
+      if (course.hasPassword) {
+        const entered = window.prompt("Этот курс защищен паролем. Введите пароль:", "");
+        if (entered === null) return;
+        accessPassword = entered.trim();
+        if (!accessPassword) {
+          toast.error("Введите пароль курса");
+          return;
+        }
+      }
+      await api.enrollCourse(course.id, accessPassword);
       toast.success("Вы записались на курс");
       await loadData();
     } catch (error: any) {
@@ -106,9 +143,31 @@ export default function CoursePage() {
   if (!course) {
     return (
       <Layout>
-        <div className="py-12 text-center">
-          <p className="text-muted-foreground">Курс не найден</p>
-        </div>
+        {passwordRequired ? (
+          <div className="mx-auto max-w-md py-12">
+            <Card>
+              <CardHeader>
+                <CardTitle>Курс защищен паролем</CardTitle>
+                <CardDescription>Введите пароль, который выдал преподаватель.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  type="password"
+                  value={coursePassword}
+                  onChange={(event) => setCoursePassword(event.target.value)}
+                  placeholder="Пароль курса"
+                />
+                <Button onClick={submitCoursePassword} disabled={checkingPassword} className="w-full">
+                  {checkingPassword ? "Проверка..." : "Открыть курс"}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <div className="py-12 text-center">
+            <p className="text-muted-foreground">Курс не найден</p>
+          </div>
+        )}
       </Layout>
     );
   }

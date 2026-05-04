@@ -17,6 +17,7 @@ const (
 
 	MaxCourseTitleLen       = 120
 	MaxCourseDescriptionLen = 2000
+	MaxCoursePasswordLen    = 10
 
 	MaxModuleTitleLen       = 120
 	MaxModuleDescriptionLen = 1500
@@ -99,6 +100,14 @@ func validateCoursePayload(title, description string) error {
 		return err
 	}
 	return ensureMaxLen("description", description, MaxCourseDescriptionLen)
+}
+
+func validateCourseAccessPassword(password string) error {
+	password = strings.TrimSpace(password)
+	if err := ensureRequired("course password", password); err != nil {
+		return err
+	}
+	return ensureMaxLen("course password", password, MaxCoursePasswordLen)
 }
 
 func validateModulePayload(title, description string) error {

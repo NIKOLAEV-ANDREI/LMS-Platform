@@ -8,6 +8,7 @@ export const LIMITS = {
 
   courseTitle: 120,
   courseDescription: 2000,
+  courseAccessPassword: 10,
   imageUrl: 2048,
 
   moduleTitle: 120,

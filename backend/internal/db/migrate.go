@@ -19,8 +19,10 @@ func Migrate(db *sql.DB) error {
 			title TEXT NOT NULL,
 			description TEXT NOT NULL,
 			teacher_id BIGINT NOT NULL REFERENCES users(id),
-			status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected'))
+			status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+			access_password_hash TEXT NOT NULL DEFAULT ''
 		);`,
+		`ALTER TABLE courses ADD COLUMN IF NOT EXISTS access_password_hash TEXT NOT NULL DEFAULT '';`,
 		`CREATE TABLE IF NOT EXISTS enrollments (
 			user_id BIGINT NOT NULL REFERENCES users(id),
 			course_id BIGINT NOT NULL REFERENCES courses(id),

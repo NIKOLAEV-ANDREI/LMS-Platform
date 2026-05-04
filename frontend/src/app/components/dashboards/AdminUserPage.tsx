@@ -1,8 +1,20 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import AvatarField from "../shared/AvatarField";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../ui/alert-dialog";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
@@ -89,6 +101,28 @@ export default function AdminUserPage() {
     setUser(updatedUser);
   };
 
+  const deleteUser = async () => {
+    if (!id) return;
+    try {
+      await api.deleteUser(id);
+      toast.success("Пользователь удален");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка удаления пользователя");
+    }
+  };
+
+  const restoreUser = async () => {
+    if (!id) return;
+    try {
+      await api.restoreUser(id);
+      toast.success("Пользователь восстановлен");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка восстановления пользователя");
+    }
+  };
+
   const deleteCourse = async (courseId: string) => {
     if (!window.confirm("Переместить курс в удаленные?")) return;
     try {
@@ -130,6 +164,39 @@ export default function AdminUserPage() {
     }
   };
 
+  const toggleCoursePassword = async (course: Course) => {
+    if (course.hasPassword) {
+      if (!window.confirm(`Снять пароль с курса "${course.title}"?`)) return;
+      try {
+        await api.clearCoursePasswordByAdmin(course.id);
+        toast.success("Пароль курса снят");
+        await loadData();
+      } catch (error: any) {
+        toast.error(error.message || "Ошибка снятия пароля курса");
+      }
+      return;
+    }
+
+    const password = window.prompt("Введите пароль для курса (до 10 символов):", "");
+    if (password === null) return;
+    const normalized = password.trim();
+    if (!normalized) {
+      toast.error("Введите пароль курса");
+      return;
+    }
+    if (normalized.length > LIMITS.courseAccessPassword) {
+      toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
+      return;
+    }
+    try {
+      await api.setCoursePasswordByAdmin(course.id, normalized);
+      toast.success("Пароль курса установлен");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка установки пароля курса");
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -156,9 +223,31 @@ export default function AdminUserPage() {
             <h1 className="text-3xl font-bold">Профиль пользователя</h1>
             <p className="text-muted-foreground">ID: {user.id}</p>
           </div>
-          <Button variant="outline" onClick={() => navigate("/admin/dashboard")}>
-            Назад
-          </Button>
+          <div className="flex items-center gap-2">
+            {!user.blocked && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">Удалить пользователя</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+                    <AlertDialogDescription>Пользователь будет перемещен во вкладку удаленных.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Отмена</AlertDialogCancel>
+                    <AlertDialogAction onClick={deleteUser}>Удалить</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {user.blocked && (
+              <Button onClick={restoreUser}>Восстановить пользователя</Button>
+            )}
+            <Button variant="outline" onClick={() => navigate("/admin/dashboard")}>
+              Назад
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -194,7 +283,7 @@ export default function AdminUserPage() {
                     setForm((prev) => ({ ...prev, name: applyTextLimit(event.target.value, LIMITS.userName, "Имя") }))
                   }
                 />
-</div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="user-email">Email</Label>
                 <Input
@@ -204,7 +293,7 @@ export default function AdminUserPage() {
                     setForm((prev) => ({ ...prev, email: applyTextLimit(event.target.value, LIMITS.email, "Email") }))
                   }
                 />
-</div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="user-password">Новый пароль</Label>
                 <Input
@@ -217,7 +306,7 @@ export default function AdminUserPage() {
                     setForm((prev) => ({ ...prev, password: applyTextLimit(event.target.value, LIMITS.password, "Пароль") }))
                   }
                 />
-</div>
+              </div>
             </div>
 
             <Button onClick={saveUser} disabled={saving}>
@@ -231,7 +320,7 @@ export default function AdminUserPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Курсы учителя</CardTitle>
-                <CardDescription>Активные и черновики</CardDescription>
+                <CardDescription>Активные курсы и черновики</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {courses.length === 0 ? (
@@ -262,6 +351,10 @@ export default function AdminUserPage() {
                         ) : (
                           <Button onClick={() => publishCourse(course.id)}>Опубликовать</Button>
                         )}
+                        <Button variant="outline" onClick={() => toggleCoursePassword(course)} className="gap-2">
+                          {course.hasPassword ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                          {course.hasPassword ? "Снять пароль" : "Поставить пароль"}
+                        </Button>
                         <Button variant="destructive" onClick={() => deleteCourse(course.id)}>
                           Удалить
                         </Button>
@@ -299,6 +392,5 @@ export default function AdminUserPage() {
     </Layout>
   );
 }
-
 
 

@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { BookOpen, Edit, Plus, Trash2, TrendingUp, Users } from "lucide-react";
+import { BookOpen, Edit, Lock, Plus, Trash2, TrendingUp, Unlock, Users } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import {
@@ -94,6 +94,39 @@ export default function TeacherDashboard() {
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка удаления курса");
+    }
+  };
+
+  const handleToggleCoursePassword = async (course: Course) => {
+    if (course.hasPassword) {
+      if (!window.confirm(`Снять пароль с курса "${course.title}"?`)) return;
+      try {
+        await api.clearCoursePassword(course.id);
+        toast.success("Пароль курса снят");
+        await loadData();
+      } catch (error: any) {
+        toast.error(error.message || "Ошибка снятия пароля курса");
+      }
+      return;
+    }
+
+    const password = window.prompt("Введите пароль для курса (до 10 символов):", "");
+    if (password === null) return;
+    const normalized = password.trim();
+    if (!normalized) {
+      toast.error("Введите пароль курса");
+      return;
+    }
+    if (normalized.length > LIMITS.courseAccessPassword) {
+      toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
+      return;
+    }
+    try {
+      await api.setCoursePassword(course.id, normalized);
+      toast.success("Пароль курса установлен");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка установки пароля курса");
     }
   };
 
@@ -267,7 +300,16 @@ export default function TeacherDashboard() {
               {recentCourses.map((course) => (
                 <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
                   <CardHeader className="min-w-0 pb-4">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        title={course.hasPassword ? "Снять пароль курса" : "Установить пароль курса"}
+                        onClick={() => handleToggleCoursePassword(course)}
+                      >
+                        {course.hasPassword ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                      </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">

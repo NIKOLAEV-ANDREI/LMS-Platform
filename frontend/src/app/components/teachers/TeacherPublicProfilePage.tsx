@@ -39,9 +39,19 @@ export default function TeacherPublicProfilePage() {
     }
   };
 
-  const handleEnroll = async (courseId: string) => {
+  const handleEnroll = async (course: Course) => {
     try {
-      await api.enrollCourse(courseId);
+      let accessPassword = "";
+      if (course.hasPassword) {
+        const entered = window.prompt("Этот курс защищен паролем. Введите пароль:", "");
+        if (entered === null) return;
+        accessPassword = entered.trim();
+        if (!accessPassword) {
+          toast.error("Введите пароль курса");
+          return;
+        }
+      }
+      await api.enrollCourse(course.id, accessPassword);
       toast.success("Вы успешно записались на курс");
       await loadData();
     } catch (error: any) {
@@ -145,7 +155,7 @@ export default function TeacherPublicProfilePage() {
                         </Link>
 
                         {isStudent && !isEnrolled && (
-                          <Button onClick={() => handleEnroll(course.id)} className="flex-1">
+                          <Button onClick={() => handleEnroll(course)} className="flex-1">
                             Записаться
                           </Button>
                         )}

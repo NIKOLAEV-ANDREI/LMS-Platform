@@ -1267,3 +1267,102 @@ Verification:
 - `gofmt -w backend/internal/handler/http/handler.go`
 - `go test ./...` passed
 - `npm run check:encoding` passed
+
+## 66) Teacher profile: course filter by publication status (2026-05-04)
+Added filtering in teacher profile (`Мои курсы`) by publication state.
+
+What changed:
+- In `Profile.tsx` (teacher section) added filter controls:
+  - `Все`
+  - `Опубликованные`
+  - `Сняты с публикации`
+- Added local filter state and memoized filtered list:
+  - published = `status === approved`
+  - unpublished = `status !== approved`
+- Updated empty-state message depending on selected filter.
+
+Updated file:
+- `frontend/src/app/components/Profile.tsx`
+
+Verification:
+- `npm run check:encoding` passed
+- `npm run build` passed
+
+## 67) Course password protection for teacher/admin + student access flow (2026-05-04)
+Implemented password protection for courses with management by teacher/admin and access handling for students.
+
+Backend:
+- DB migration:
+  - added `courses.access_password_hash` (TEXT, default empty).
+- Domain:
+  - `Course` now includes:
+    - `HasPassword bool` (`has_password` in API)
+    - `AccessPasswordHash string` (internal, not returned to client).
+- Repository:
+  - PostgreSQL course queries now load `access_password_hash` and derive `has_password`.
+  - Added methods:
+    - `SetAccessPasswordHash(courseID, hash)`
+    - `ClearAccessPassword(courseID)`
+- Service:
+  - Added validation for course password max length: 10.
+  - Added methods:
+    - `SetCoursePasswordByTeacher`, `ClearCoursePasswordByTeacher`
+    - `SetCoursePasswordByAdmin`, `ClearCoursePasswordByAdmin`
+  - Added `EnsureCourseAccess(...)`:
+    - teacher-owner and admin bypass password
+    - enrolled student bypasses password
+    - otherwise requires correct course password.
+- HTTP handlers/routes:
+  - Teacher:
+    - `POST /api/teacher/courses/{courseID}/password`
+    - `DELETE /api/teacher/courses/{courseID}/password`
+  - Admin:
+    - `POST /api/admin/courses/{id}/password`
+    - `DELETE /api/admin/courses/{id}/password`
+  - `GET /api/courses/{courseID}` now checks access with optional `X-Course-Password` header.
+  - `POST /api/courses/{courseID}/enroll` now accepts optional body `{ "access_password": "..." }` and checks access.
+
+Frontend:
+- API client:
+  - Course model now supports `hasPassword`.
+  - Added methods:
+    - `setCoursePassword`, `clearCoursePassword`
+    - `setCoursePasswordByAdmin`, `clearCoursePasswordByAdmin`
+  - `getCourse(id, accessPassword?)` sends `X-Course-Password` when provided.
+  - `enrollCourse(id, accessPassword?)` sends `access_password` in request body.
+  - Added localization for:
+    - `course password required`
+    - `invalid course password`
+- Teacher UI:
+  - On teacher course cards (dashboard + profile) added lock icon button near delete:
+    - set password (prompt)
+    - remove password (confirm)
+- Admin UI:
+  - On admin user page (teacher courses list) added set/remove course password action.
+- Student access UX:
+  - If opening protected course without access, course page shows password form.
+  - Student can enroll into protected course after entering password.
+  - Added password prompt before enroll from student dashboard and teacher public profile.
+
+Updated files:
+- `backend/internal/db/migrate.go`
+- `backend/internal/domain/models.go`
+- `backend/internal/repository/interfaces.go`
+- `backend/internal/repository/postgres/course_repo.go`
+- `backend/internal/service/field_limits.go`
+- `backend/internal/service/course_service.go`
+- `backend/internal/handler/http/handler.go`
+- `frontend/src/app/utils/api.ts`
+- `frontend/src/app/utils/limits.ts`
+- `frontend/src/app/components/courses/CoursePage.tsx`
+- `frontend/src/app/components/dashboards/StudentDashboard.tsx`
+- `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+- `frontend/src/app/components/Profile.tsx`
+- `frontend/src/app/components/dashboards/AdminUserPage.tsx`
+- `frontend/src/app/components/teachers/TeacherPublicProfilePage.tsx`
+
+Verification:
+- `gofmt -w` on changed Go files
+- `go test ./...` passed
+- `npm run check:encoding` passed
+- `npm run build` passed

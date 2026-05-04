@@ -19,13 +19,15 @@ type User struct {
 }
 
 type Course struct {
-	ID          int64    `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	TeacherID   int64    `json:"teacher_id"`
-	TeacherName string   `json:"teacher_name,omitempty"`
-	Status      string   `json:"status"`
-	Modules     []Module `json:"modules,omitempty"`
+	ID                 int64    `json:"id"`
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	TeacherID          int64    `json:"teacher_id"`
+	TeacherName        string   `json:"teacher_name,omitempty"`
+	Status             string   `json:"status"`
+	HasPassword        bool     `json:"has_password"`
+	AccessPasswordHash string   `json:"-"`
+	Modules            []Module `json:"modules,omitempty"`
 }
 
 type Enrollment struct {

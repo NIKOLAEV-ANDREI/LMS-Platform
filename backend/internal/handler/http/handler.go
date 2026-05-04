@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -48,6 +49,8 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses", h.teacherCourses)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses/{courseID}/publish", h.publishCourse)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses/{courseID}/unpublish", h.unpublishCourse)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses/{courseID}/password", h.setCoursePassword)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Delete("/teacher/courses/{courseID}/password", h.clearCoursePassword)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses/{courseID}/restore", h.restoreCourse)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Delete("/teacher/courses/{courseID}", h.deleteCourse)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}", h.updateCourseByTeacher)
@@ -69,6 +72,8 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/courses/{id}", h.updateCourseByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{id}/publish", h.publishCourseByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{id}/unpublish", h.unpublishCourseByAdmin)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{id}/password", h.setCoursePasswordByAdmin)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{id}/password", h.clearCoursePasswordByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{id}/restore", h.restoreCourseByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{id}", h.deleteCourseByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{courseID}/modules", h.addModuleByAdmin)
@@ -319,6 +324,8 @@ func (h *Handler) listCourses(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) courseByID(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserIDFromContext(r.Context())
+	role := middleware.RoleFromContext(r.Context())
 	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid course id")
@@ -331,6 +338,10 @@ func (h *Handler) courseByID(w http.ResponseWriter, r *http.Request) {
 	}
 	if course == nil {
 		writeErr(w, http.StatusNotFound, "course not found")
+		return
+	}
+	if err := h.course.EnsureCourseAccess(uid, role, course, r.Header.Get("X-Course-Password")); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, course)
@@ -376,9 +387,30 @@ func (h *Handler) teacherPublicProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) enroll(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserIDFromContext(r.Context())
+	role := middleware.RoleFromContext(r.Context())
 	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	var req struct {
+		AccessPassword string `json:"access_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	course, err := h.course.CourseByID(courseID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if course == nil {
+		writeErr(w, http.StatusNotFound, "course not found")
+		return
+	}
+	if err := h.course.EnsureCourseAccess(uid, role, course, req.AccessPassword); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
 		return
 	}
 	if err := h.course.Enroll(uid, courseID); err != nil {
@@ -659,6 +691,74 @@ func (h *Handler) unpublishCourseByAdmin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unpublished"})
+}
+
+func (h *Handler) setCoursePassword(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := h.course.SetCoursePasswordByTeacher(teacherID, courseID, req.Password); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password_set"})
+}
+
+func (h *Handler) clearCoursePassword(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	if err := h.course.ClearCoursePasswordByTeacher(teacherID, courseID); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password_cleared"})
+}
+
+func (h *Handler) setCoursePasswordByAdmin(w http.ResponseWriter, r *http.Request) {
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := h.course.SetCoursePasswordByAdmin(courseID, req.Password); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password_set"})
+}
+
+func (h *Handler) clearCoursePasswordByAdmin(w http.ResponseWriter, r *http.Request) {
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	if err := h.course.ClearCoursePasswordByAdmin(courseID); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password_cleared"})
 }
 
 func (h *Handler) restoreCourseByAdmin(w http.ResponseWriter, r *http.Request) {

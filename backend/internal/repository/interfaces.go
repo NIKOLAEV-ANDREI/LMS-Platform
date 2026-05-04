@@ -31,6 +31,8 @@ type CourseRepository interface {
 	AddLesson(lesson *domain.Lesson) error
 	UpdateLesson(lesson *domain.Lesson) error
 	DeleteLesson(lessonID int64) error
+	SetAccessPasswordHash(courseID int64, passwordHash string) error
+	ClearAccessPassword(courseID int64) error
 }
 
 type EnrollmentRepository interface {

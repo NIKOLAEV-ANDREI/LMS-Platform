@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Award, BookOpen, Calendar, Clock, Edit, Mail, Plus, Trash2, TrendingUp, UserMinus } from "lucide-react";
+import { Award, BookOpen, Calendar, Clock, Edit, Lock, Mail, Plus, Trash2, TrendingUp, Unlock, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "./Layout";
 import AvatarField from "./shared/AvatarField";
@@ -29,6 +29,8 @@ import { applyTextLimit, LIMITS } from "../utils/limits";
 import { formatRuCount } from "../utils/plural";
 
 export default function Profile() {
+  type TeacherCourseFilter = "all" | "published" | "unpublished";
+
   const [user, setUser] = useState<User | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [progress, setProgress] = useState<Record<string, CourseProgress>>({});
@@ -37,6 +39,7 @@ export default function Profile() {
   const [unenrollingCourseId, setUnenrollingCourseId] = useState<string | null>(null);
   const [courseActionId, setCourseActionId] = useState<string | null>(null);
   const [teacherDialogOpen, setTeacherDialogOpen] = useState(false);
+  const [teacherCourseFilter, setTeacherCourseFilter] = useState<TeacherCourseFilter>("all");
   const [newTeacherCourse, setNewTeacherCourse] = useState({
     title: "",
     description: "",
@@ -179,6 +182,47 @@ export default function Profile() {
     }
   };
 
+  const handleToggleTeacherCoursePassword = async (course: Course) => {
+    if (courseActionId) return;
+
+    if (course.hasPassword) {
+      if (!window.confirm(`Снять пароль с курса "${course.title}"?`)) return;
+      setCourseActionId(course.id);
+      try {
+        await api.clearCoursePassword(course.id);
+        toast.success("Пароль курса снят");
+        await loadData();
+      } catch (error: any) {
+        toast.error(error.message || "Ошибка снятия пароля курса");
+      } finally {
+        setCourseActionId(null);
+      }
+      return;
+    }
+
+    const password = window.prompt("Введите пароль для курса (до 10 символов):", "");
+    if (password === null) return;
+    const normalized = password.trim();
+    if (!normalized) {
+      toast.error("Введите пароль курса");
+      return;
+    }
+    if (normalized.length > LIMITS.courseAccessPassword) {
+      toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
+      return;
+    }
+    setCourseActionId(course.id);
+    try {
+      await api.setCoursePassword(course.id, normalized);
+      toast.success("Пароль курса установлен");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка установки пароля курса");
+    } finally {
+      setCourseActionId(null);
+    }
+  };
+
   const handleCreateTeacherCourse = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
@@ -224,6 +268,15 @@ export default function Profile() {
     () => courses.filter((course) => (progress[course.id]?.progress || 0) < 100),
     [courses, progress],
   );
+  const filteredTeacherCourses = useMemo(() => {
+    if (teacherCourseFilter === "published") {
+      return courses.filter((course) => course.status === "approved");
+    }
+    if (teacherCourseFilter === "unpublished") {
+      return courses.filter((course) => course.status !== "approved");
+    }
+    return courses;
+  }, [courses, teacherCourseFilter]);
 
   if (loading) {
     return (
@@ -595,19 +648,62 @@ export default function Profile() {
               </Dialog>
             </div>
 
-            {courses.length === 0 ? (
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={teacherCourseFilter === "all" ? "default" : "outline"}
+                onClick={() => setTeacherCourseFilter("all")}
+              >
+                Все
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={teacherCourseFilter === "published" ? "default" : "outline"}
+                onClick={() => setTeacherCourseFilter("published")}
+              >
+                Опубликованные
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={teacherCourseFilter === "unpublished" ? "default" : "outline"}
+                onClick={() => setTeacherCourseFilter("unpublished")}
+              >
+                Сняты с публикации
+              </Button>
+            </div>
+
+            {filteredTeacherCourses.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
-                  <p className="text-muted-foreground">У вас пока нет созданных курсов</p>
+                  <p className="text-muted-foreground">
+                    {teacherCourseFilter === "all"
+                      ? "У вас пока нет созданных курсов"
+                      : teacherCourseFilter === "published"
+                        ? "Нет опубликованных курсов"
+                        : "Нет курсов, снятых с публикации"}
+                  </p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {courses.map((course) => (
+                {filteredTeacherCourses.map((course) => (
                   <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
                     <CardHeader className="min-w-0 pb-4">
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title={course.hasPassword ? "Снять пароль курса" : "Установить пароль курса"}
+                          onClick={() => handleToggleTeacherCoursePassword(course)}
+                          disabled={Boolean(courseActionId)}
+                        >
+                          {course.hasPassword ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                        </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">

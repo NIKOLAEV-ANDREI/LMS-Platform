@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	"lms-backend/internal/domain"
 	"lms-backend/internal/repository"
 )
@@ -65,6 +66,41 @@ func (s *CourseService) ListTeacherPublishedCourses(teacherID int64) ([]domain.C
 	}
 
 	return published, nil
+}
+
+func (s *CourseService) EnsureCourseAccess(userID int64, role domain.Role, course *domain.Course, password string) error {
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.AccessPasswordHash == "" {
+		return nil
+	}
+	if role == domain.RoleAdmin {
+		return nil
+	}
+	if role == domain.RoleTeacher && course.TeacherID == userID {
+		return nil
+	}
+	if role == domain.RoleStudent {
+		enrollments, err := s.enrollments.ListByStudent(userID)
+		if err != nil {
+			return err
+		}
+		for _, enrollment := range enrollments {
+			if enrollment.CourseID == course.ID {
+				return nil
+			}
+		}
+	}
+
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return errors.New("course password required")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(course.AccessPasswordHash), []byte(password)); err != nil {
+		return errors.New("invalid course password")
+	}
+	return nil
 }
 
 func (s *CourseService) Enroll(studentID, courseID int64) error {
@@ -226,6 +262,72 @@ func (s *CourseService) RestoreByAdmin(courseID int64) error {
 		return errors.New("course not found")
 	}
 	return s.courses.SetStatus(courseID, "pending")
+}
+
+func (s *CourseService) SetCoursePasswordByTeacher(teacherID, courseID int64, password string) error {
+	password = strings.TrimSpace(password)
+	if err := validateCourseAccessPassword(password); err != nil {
+		return err
+	}
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.courses.SetAccessPasswordHash(courseID, string(hash))
+}
+
+func (s *CourseService) ClearCoursePasswordByTeacher(teacherID, courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	return s.courses.ClearAccessPassword(courseID)
+}
+
+func (s *CourseService) SetCoursePasswordByAdmin(courseID int64, password string) error {
+	password = strings.TrimSpace(password)
+	if err := validateCourseAccessPassword(password); err != nil {
+		return err
+	}
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.courses.SetAccessPasswordHash(courseID, string(hash))
+}
+
+func (s *CourseService) ClearCoursePasswordByAdmin(courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	return s.courses.ClearAccessPassword(courseID)
 }
 
 func (s *CourseService) DeleteByAdmin(courseID int64) error {
