@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ClipboardList, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ClipboardList, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import CharCounter from "../shared/CharCounter";
@@ -329,10 +329,24 @@ export default function LessonEditor() {
   }
 
   const backToCourseEditor = isAdminMode ? `/admin/courses/${courseId}/edit` : `/courses/${courseId}/edit`;
+  const goBackToCourseEditor = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(backToCourseEditor, { replace: true });
+  };
 
   return (
     <Layout fullWidth>
       <div className="space-y-6">
+        <div>
+          <Button variant="outline" className="gap-2" onClick={goBackToCourseEditor}>
+            <ArrowLeft className="h-4 w-4" />
+            Назад к курсу
+          </Button>
+        </div>
+
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">{lessonForm.title || lesson.title}</h1>
@@ -340,9 +354,6 @@ export default function LessonEditor() {
           </div>
 
           <div className="flex gap-2">
-            <Link to={backToCourseEditor}>
-              <Button variant="outline">Назад к курсу</Button>
-            </Link>
             <Link to={`/courses/${courseId}`}>
               <Button variant="outline">Просмотр курса</Button>
             </Link>

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import Layout from "../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { api, Course, Module, Lesson } from "../../utils/api";
-import { Plus, BookOpen, FileText, Video, ClipboardList, Trash2, Pencil } from "lucide-react";
+import { Plus, BookOpen, FileText, Video, ClipboardList, Trash2, Pencil, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import CharCounter from "../shared/CharCounter";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
@@ -205,6 +205,14 @@ export default function CourseEditor() {
     }
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(isAdminMode ? "/admin/dashboard" : "/teacher/dashboard");
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -228,13 +236,20 @@ export default function CourseEditor() {
   return (
     <Layout>
       <div className="space-y-6">
+        <div>
+          <Button variant="outline" className="gap-2" onClick={handleBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Назад
+          </Button>
+        </div>
+
         <div className="flex justify-between items-center">
           <div className="min-w-0">
             <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">{courseForm.title || course.title}</h1>
             <p className="text-muted-foreground mt-1">Редактор курса</p>
           </div>
           <Button variant="outline" onClick={() => navigate(`/courses/${id}`)}>
-            Просмотр
+            Просмотр курса
           </Button>
         </div>
 

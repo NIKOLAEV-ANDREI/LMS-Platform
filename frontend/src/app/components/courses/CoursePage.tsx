@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
-import { Award, BookOpen, CheckCircle, ClipboardList, Clock, Download, FileText, TrendingUp, Users, Video } from "lucide-react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { ArrowLeft, Award, BookOpen, CheckCircle, ClipboardList, Clock, Download, FileText, TrendingUp, Users, Video } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
@@ -22,6 +22,7 @@ type CoursePageLocationState = {
 export default function CoursePage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [progress, setProgress] = useState<CourseProgress | null>(null);
@@ -146,6 +147,7 @@ export default function CoursePage() {
   const totalLessons = modules.reduce((sum, module) => sum + module.lessons.length, 0);
   const isEnrolled = Boolean(user?.enrolledCourses.includes(course?.id ?? ""));
   const isTeacherOwner = Boolean(user?.role === "teacher" && course?.teacherId === user?.id);
+  const canOpenLesson = isEnrolled || isTeacherOwner;
   const completedLessonsSet = useMemo(() => new Set(progress?.completedLessons ?? []), [progress?.completedLessons]);
   const lessonTitles = useMemo(() => {
     const map: Record<string, string> = {};
@@ -210,6 +212,26 @@ export default function CoursePage() {
       return <Badge className="bg-green-600">Принято</Badge>;
     }
     return <Badge variant="destructive">Отклонено</Badge>;
+  };
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    if (user?.role === "admin") {
+      navigate("/admin/dashboard");
+      return;
+    }
+    if (user?.role === "teacher") {
+      navigate("/teacher/dashboard");
+      return;
+    }
+    if (user?.role === "student") {
+      navigate("/student/dashboard");
+      return;
+    }
+    navigate("/");
   };
 
   useEffect(() => {
@@ -280,6 +302,13 @@ export default function CoursePage() {
   return (
     <Layout>
       <div className="space-y-6">
+        <div>
+          <Button variant="outline" className="gap-2" onClick={handleBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Назад
+          </Button>
+        </div>
+
         {course.imageUrl && (
           <div className="aspect-video overflow-hidden rounded-lg bg-gray-200">
             <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
@@ -498,9 +527,9 @@ export default function CoursePage() {
 
                                 {isCompleted && <CheckCircle className="h-5 w-5 text-green-500" />}
 
-                                {isEnrolled && (
+                                {canOpenLesson && (
                                   <Link to={`/courses/${course.id}/lessons/${lesson.id}`}>
-                                    <Button size="sm">{isCompleted ? "Повторить" : "Начать"}</Button>
+                                    <Button size="sm">{isEnrolled ? (isCompleted ? "Повторить" : "Начать") : "Просмотр"}</Button>
                                   </Link>
                                 )}
                               </div>

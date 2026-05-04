@@ -87,7 +87,12 @@ export default function LessonViewer() {
 
   const goBackToCourse = () => {
     if (!courseId) return;
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
     navigate(`/courses/${courseId}`, {
+      replace: true,
       state: parentModuleId ? { openModuleId: parentModuleId } : undefined,
     });
   };
@@ -309,7 +314,7 @@ export default function LessonViewer() {
     <Layout>
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" className="gap-2" onClick={goBackToCourse}>
+          <Button variant="outline" size="sm" className="gap-2" onClick={goBackToCourse}>
             <ArrowLeft className="h-4 w-4" />
             Назад к курсу
           </Button>
@@ -627,18 +632,12 @@ export default function LessonViewer() {
               </Card>
             )}
 
-            {lesson.type !== "test" && (
-              <div className="flex items-center justify-between border-t pt-6">
-                <Button variant="outline" className="gap-2" onClick={goBackToCourse}>
-                  <ArrowLeft className="h-4 w-4" />К содержанию
+            {lesson.type !== "test" && isStudentEnrolled && !canSubmitWork && (
+              <div className="flex items-center justify-end border-t pt-6">
+                <Button onClick={handleCompleteLesson} className="gap-2">
+                  Завершить урок
+                  <CheckCircle className="h-4 w-4" />
                 </Button>
-
-                {isStudentEnrolled && !canSubmitWork && (
-                  <Button onClick={handleCompleteLesson} className="gap-2">
-                    Завершить урок
-                    <CheckCircle className="h-4 w-4" />
-                  </Button>
-                )}
               </div>
             )}
           </CardContent>

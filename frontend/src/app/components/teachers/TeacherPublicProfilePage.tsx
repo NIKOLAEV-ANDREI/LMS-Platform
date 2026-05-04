@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import { BookOpen, Clock, Mail, UserRound } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router";
+import { ArrowLeft, BookOpen, Clock, Lock, Mail, Unlock, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import { Button } from "../ui/button";
@@ -11,6 +11,7 @@ import { formatRuCount } from "../../utils/plural";
 
 export default function TeacherPublicProfilePage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const [viewer, setViewer] = useState<User | null>(null);
   const [teacherName, setTeacherName] = useState("Преподаватель");
@@ -71,6 +72,26 @@ export default function TeacherPublicProfilePage() {
   const isStudent = viewer?.role === "student";
   const enrolledSet = new Set(viewer?.enrolledCourses || []);
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    if (viewer?.role === "admin") {
+      navigate("/admin/dashboard");
+      return;
+    }
+    if (viewer?.role === "teacher") {
+      navigate("/teacher/dashboard");
+      return;
+    }
+    if (viewer?.role === "student") {
+      navigate("/student/dashboard");
+      return;
+    }
+    navigate("/");
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -84,6 +105,13 @@ export default function TeacherPublicProfilePage() {
   return (
     <Layout>
       <div className="space-y-6">
+        <div>
+          <Button variant="outline" className="gap-2" onClick={handleBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Назад
+          </Button>
+        </div>
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-4">
@@ -155,23 +183,30 @@ export default function TeacherPublicProfilePage() {
                         <Clock className="h-4 w-4" />
                         <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
                       </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {course.hasPassword ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                        <span>{course.hasPassword ? "С паролем" : "Без пароля"}</span>
+                      </div>
 
                       <div className="flex gap-2">
-                        <Link to={`/courses/${course.id}`} className="flex-1">
-                          <Button variant="outline" className="w-full">
-                            Просмотреть
-                          </Button>
-                        </Link>
-
-                        {isStudent && !isEnrolled && (
-                          <Button onClick={() => handleEnroll(course)} className="flex-1">
-                            Записаться
-                          </Button>
-                        )}
-
-                        {isStudent && isEnrolled && (
+                        {isStudent ? (
+                          isEnrolled ? (
+                            <Link to={`/courses/${course.id}`} className="flex-1">
+                              <Button className="h-11 w-full">Открыть</Button>
+                            </Link>
+                          ) : (
+                            <>
+                              <Link to={`/courses/${course.id}`} className="flex-1">
+                                <Button className="h-11 w-full">Просмотреть</Button>
+                              </Link>
+                              <Button onClick={() => handleEnroll(course)} className="h-11 flex-1">
+                                Записаться
+                              </Button>
+                            </>
+                          )
+                        ) : (
                           <Link to={`/courses/${course.id}`} className="flex-1">
-                            <Button className="w-full">Открыть</Button>
+                            <Button className="h-11 w-full">Просмотреть</Button>
                           </Link>
                         )}
                       </div>

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { Award, BookOpen, Calendar, Clock, Edit, Lock, Mail, Plus, Trash2, TrendingUp, Unlock, UserMinus } from "lucide-react";
 import { toast } from "sonner";
@@ -482,6 +482,10 @@ export default function Profile() {
                               <Clock className="h-4 w-4" />
                               <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
                             </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {course.hasPassword ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                              <span>{course.hasPassword ? "С паролем" : "Без пароля"}</span>
+                            </div>
 
                             <Link to={`/courses/${course.id}`} className="block">
                               <Button className="w-full">Продолжить</Button>
@@ -546,6 +550,10 @@ export default function Profile() {
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <Clock className="h-4 w-4" />
                               <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {course.hasPassword ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                              <span>{course.hasPassword ? "С паролем" : "Без пароля"}</span>
                             </div>
 
                             <Link to={`/courses/${course.id}`} className="block">

@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Award, BookOpen, Clock, TrendingUp } from "lucide-react";
+import { Award, BookOpen, Clock, Lock, TrendingUp, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import { Button } from "../ui/button";
@@ -211,6 +211,10 @@ export default function StudentDashboard() {
                         <Clock className="h-4 w-4" />
                         <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
                       </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {course.hasPassword ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                        <span>{course.hasPassword ? "С паролем" : "Без пароля"}</span>
+                      </div>
 
                       <Link to={`/courses/${course.id}`} className="block">
                         <Button className="w-full">{courseProgress?.progress === 100 ? "Просмотреть" : "Продолжить"}</Button>
@@ -270,14 +274,18 @@ export default function StudentDashboard() {
                       <Clock className="h-4 w-4" />
                       <span>{formatRuCount(course.modules.length, "модуль", "модуля", "модулей")}</span>
                     </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {course.hasPassword ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                      <span>{course.hasPassword ? "С паролем" : "Без пароля"}</span>
+                    </div>
 
                     <div className="flex gap-2">
                       <Link to={`/courses/${course.id}`} className="flex-1">
-                        <Button variant="outline" className="w-full">
+                        <Button className="h-11 w-full">
                           Просмотреть
                         </Button>
                       </Link>
-                      <Button onClick={() => handleEnroll(course)} className="flex-1">
+                      <Button onClick={() => handleEnroll(course)} className="h-11 flex-1">
                         Записаться
                       </Button>
                     </div>

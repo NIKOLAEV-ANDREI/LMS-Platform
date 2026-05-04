@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Lock, Unlock } from "lucide-react";
+import { ArrowLeft, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import AvatarField from "../shared/AvatarField";
@@ -201,6 +201,14 @@ export default function AdminUserPage() {
     }
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate("/admin/dashboard");
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -222,6 +230,13 @@ export default function AdminUserPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        <div>
+          <Button variant="outline" className="gap-2" onClick={handleBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Назад
+          </Button>
+        </div>
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Профиль пользователя</h1>
@@ -248,9 +263,6 @@ export default function AdminUserPage() {
             {user.blocked && (
               <Button onClick={restoreUser}>Восстановить пользователя</Button>
             )}
-            <Button variant="outline" onClick={() => navigate("/admin/dashboard")}>
-              Назад
-            </Button>
           </div>
         </div>
 
