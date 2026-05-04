@@ -1,16 +1,14 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Award, BookOpen, CheckCircle, ClipboardList, Clock, Download, FileText, TrendingUp, Users, Video } from "lucide-react";
+import { ArrowLeft, Award, BookOpen, CheckCircle, ClipboardList, Clock, FileText, TrendingUp, Users, Video } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Progress } from "../ui/progress";
-import { Textarea } from "../ui/textarea";
 import { api, Course, LessonSubmission, Progress as CourseProgress, User } from "../../utils/api";
 import { LIMITS } from "../../utils/limits";
 import { formatRuCount } from "../../utils/plural";
@@ -34,10 +32,6 @@ export default function CoursePage() {
   const [checkingPassword, setCheckingPassword] = useState(false);
   const [studentSubmissions, setStudentSubmissions] = useState<Record<string, LessonSubmission>>({});
   const [teacherSubmissions, setTeacherSubmissions] = useState<LessonSubmission[]>([]);
-  const [reviewingSubmissionId, setReviewingSubmissionId] = useState<string | null>(null);
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
-  const [rejectSubmissionId, setRejectSubmissionId] = useState<string | null>(null);
-  const [rejectNote, setRejectNote] = useState("");
 
   const moduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const openFromStateApplied = useRef(false);
@@ -149,59 +143,6 @@ export default function CoursePage() {
   const isTeacherOwner = Boolean(user?.role === "teacher" && course?.teacherId === user?.id);
   const canOpenLesson = isEnrolled || isTeacherOwner;
   const completedLessonsSet = useMemo(() => new Set(progress?.completedLessons ?? []), [progress?.completedLessons]);
-  const lessonTitles = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const module of modules) {
-      for (const lesson of module.lessons) {
-        map[lesson.id] = lesson.title;
-      }
-    }
-    return map;
-  }, [modules]);
-
-  const reviewSubmission = async (submissionId: string, action: "approve" | "reject", reviewNote: string) => {
-    if (!id) return;
-    setReviewingSubmissionId(submissionId);
-    try {
-      await api.reviewLessonSubmission(id, submissionId, { action, reviewNote });
-      toast.success(action === "approve" ? "Работа подтверждена" : "Работа отклонена");
-      await loadData();
-    } catch (error: any) {
-      toast.error(error.message || "Ошибка проверки работы");
-    } finally {
-      setReviewingSubmissionId(null);
-    }
-  };
-
-  const openRejectDialogFor = (submissionId: string) => {
-    setRejectSubmissionId(submissionId);
-    setRejectNote("");
-    setRejectDialogOpen(true);
-  };
-
-  const closeRejectDialog = () => {
-    if (reviewingSubmissionId) return;
-    setRejectDialogOpen(false);
-    setRejectSubmissionId(null);
-    setRejectNote("");
-  };
-
-  const submitReject = async () => {
-    if (!rejectSubmissionId) return;
-    const normalized = rejectNote.trim();
-    if (!normalized) {
-      toast.error("Комментарий обязателен при отклонении");
-      return;
-    }
-    if (normalized.length > LIMITS.lessonReviewNote) {
-      toast.error(`Комментарий не должен превышать ${LIMITS.lessonReviewNote} символов`);
-      return;
-    }
-    await reviewSubmission(rejectSubmissionId, "reject", normalized);
-    setRejectDialogOpen(false);
-    setRejectSubmissionId(null);
-    setRejectNote("");
-  };
 
   const getSubmissionBadge = (submission?: LessonSubmission) => {
     if (!submission) return null;
@@ -392,57 +333,15 @@ export default function CoursePage() {
           <Card>
             <CardHeader>
               <CardTitle>Работы на проверку</CardTitle>
-              <CardDescription>Отправленные студентами файлы по урокам этого курса.</CardDescription>
+              <CardDescription>Откройте отдельный раздел для проверки и подтверждения работ.</CardDescription>
             </CardHeader>
-            <CardContent>
-              {teacherSubmissions.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">Новых работ на проверку нет</div>
-              ) : (
-                <div className="space-y-3">
-                  {teacherSubmissions.map((submission) => (
-                    <div key={submission.id} className="rounded-lg border p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 space-y-1">
-                          <p className="font-medium">{lessonTitles[submission.lessonId] || `Урок #${submission.lessonId}`}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Студент: {submission.studentName || `#${submission.studentId}`} ({submission.studentEmail || "email не указан"})
-                          </p>
-                        </div>
-                        <a href={submission.fileUrl} download={submission.fileName} target="_blank" rel="noreferrer">
-                          <Button variant="outline" size="sm" className="gap-2">
-                            <Download className="h-4 w-4" />
-                            Скачать файл
-                          </Button>
-                        </a>
-                      </div>
-
-                      {submission.studentNote && (
-                        <p className="mt-3 rounded-md bg-muted/40 p-2 text-sm break-words [overflow-wrap:anywhere]">
-                          Комментарий студента: {submission.studentNote}
-                        </p>
-                      )}
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          disabled={reviewingSubmissionId === submission.id}
-                          onClick={() => reviewSubmission(submission.id, "approve", "")}
-                        >
-                          Подтвердить прохождение
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={reviewingSubmissionId === submission.id}
-                          onClick={() => openRejectDialogFor(submission.id)}
-                        >
-                          Отклонить
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <CardContent className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                На проверке: {formatRuCount(teacherSubmissions.length, "работа", "работы", "работ")}
+              </p>
+              <Link to={`/courses/${course.id}/reviews`}>
+                <Button>Открыть раздел проверки</Button>
+              </Link>
             </CardContent>
           </Card>
         )}
@@ -546,37 +445,6 @@ export default function CoursePage() {
         </Card>
       </div>
 
-      <Dialog open={rejectDialogOpen} onOpenChange={(nextOpen) => (nextOpen ? setRejectDialogOpen(true) : closeRejectDialog())}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Отклонить работу</DialogTitle>
-            <DialogDescription>
-              Укажите причину отклонения. Этот комментарий увидит студент.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2">
-            <Textarea
-              value={rejectNote}
-              onChange={(event) => setRejectNote(event.target.value.slice(0, LIMITS.lessonReviewNote))}
-              rows={4}
-              placeholder="Например: исправьте оформление и добавьте выводы в конце работы."
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {rejectNote.length}/{LIMITS.lessonReviewNote}
-            </p>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={closeRejectDialog} disabled={Boolean(reviewingSubmissionId)}>
-              Отмена
-            </Button>
-            <Button variant="destructive" onClick={submitReject} disabled={Boolean(reviewingSubmissionId)}>
-              {reviewingSubmissionId ? "Сохранение..." : "Отклонить работу"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Layout>
   );
 }

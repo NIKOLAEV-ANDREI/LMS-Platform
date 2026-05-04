@@ -110,6 +110,7 @@ type LessonSubmission struct {
 	StudentNote  string                 `json:"student_note,omitempty"`
 	ReviewNote   string                 `json:"review_note,omitempty"`
 	Status       LessonSubmissionStatus `json:"status"`
+	AttemptCount int                    `json:"attempt_count"`
 	CreatedAt    time.Time              `json:"created_at"`
 	UpdatedAt    time.Time              `json:"updated_at"`
 	ReviewedAt   *time.Time             `json:"reviewed_at,omitempty"`

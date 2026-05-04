@@ -70,11 +70,13 @@ func Migrate(db *sql.DB) error {
 			student_note TEXT NOT NULL DEFAULT '',
 			review_note TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+			attempt_count INTEGER NOT NULL DEFAULT 1,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			reviewed_at TIMESTAMPTZ,
 			UNIQUE(course_id, lesson_id, student_id)
 		);`,
+		`ALTER TABLE lesson_submissions ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 1;`,
 	}
 
 	for _, q := range queries {

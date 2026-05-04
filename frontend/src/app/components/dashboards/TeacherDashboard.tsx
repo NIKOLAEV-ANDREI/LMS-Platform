@@ -383,6 +383,12 @@ export default function TeacherDashboard() {
                       </Link>
                     </div>
 
+                    <Link to={`/courses/${course.id}/reviews`}>
+                      <Button variant="outline" className="h-11 w-full">
+                        Проверка работ
+                      </Button>
+                    </Link>
+
                     {course.status !== "approved" && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>

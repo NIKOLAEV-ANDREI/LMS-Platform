@@ -185,9 +185,9 @@ func (r *EnrollmentRepo) SubmitLessonWork(studentID, courseID, lessonID int64, f
 	var status string
 	err = r.db.QueryRow(`
 		INSERT INTO lesson_submissions(
-			course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, created_at, updated_at, reviewed_at
+			course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, attempt_count, created_at, updated_at, reviewed_at
 		)
-		VALUES($1,$2,$3,$4,$5,$6,$7,'','pending',NOW(),NOW(),NULL)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'','pending',1,NOW(),NOW(),NULL)
 		ON CONFLICT(course_id, lesson_id, student_id) DO UPDATE SET
 			teacher_id = EXCLUDED.teacher_id,
 			file_name = EXCLUDED.file_name,
@@ -195,9 +195,10 @@ func (r *EnrollmentRepo) SubmitLessonWork(studentID, courseID, lessonID int64, f
 			student_note = EXCLUDED.student_note,
 			review_note = '',
 			status = 'pending',
+			attempt_count = lesson_submissions.attempt_count + 1,
 			updated_at = NOW(),
 			reviewed_at = NULL
-		RETURNING id, course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, created_at, updated_at, reviewed_at
+		RETURNING id, course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, attempt_count, created_at, updated_at, reviewed_at
 	`, courseID, lessonID, studentID, teacherID, fileName, fileURL, studentNote).Scan(
 		&submission.ID,
 		&submission.CourseID,
@@ -209,6 +210,7 @@ func (r *EnrollmentRepo) SubmitLessonWork(studentID, courseID, lessonID int64, f
 		&submission.StudentNote,
 		&submission.ReviewNote,
 		&status,
+		&submission.AttemptCount,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
 		&submission.ReviewedAt,
@@ -235,7 +237,7 @@ func (r *EnrollmentRepo) ListTeacherCourseSubmissions(teacherID, courseID int64,
 
 	query := `
 		SELECT s.id, s.course_id, s.lesson_id, s.student_id, COALESCE(u.name, ''), COALESCE(u.email, ''), s.teacher_id,
-		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.created_at, s.updated_at, s.reviewed_at
+		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.attempt_count, s.created_at, s.updated_at, s.reviewed_at
 		FROM lesson_submissions s
 		LEFT JOIN users u ON u.id = s.student_id
 		WHERE s.course_id=$1
@@ -267,7 +269,7 @@ func (r *EnrollmentRepo) ListTeacherCourseSubmissions(teacherID, courseID int64,
 func (r *EnrollmentRepo) ListStudentCourseSubmissions(studentID, courseID int64) ([]domain.LessonSubmission, error) {
 	rows, err := r.db.Query(`
 		SELECT s.id, s.course_id, s.lesson_id, s.student_id, COALESCE(u.name, ''), COALESCE(u.email, ''), s.teacher_id,
-		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.created_at, s.updated_at, s.reviewed_at
+		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.attempt_count, s.created_at, s.updated_at, s.reviewed_at
 		FROM lesson_submissions s
 		LEFT JOIN users u ON u.id = s.student_id
 		WHERE s.student_id=$1 AND s.course_id=$2
@@ -292,7 +294,7 @@ func (r *EnrollmentRepo) ListStudentCourseSubmissions(studentID, courseID int64)
 func (r *EnrollmentRepo) GetTeacherCourseSubmissionByID(teacherID, courseID, submissionID int64) (*domain.LessonSubmission, error) {
 	row := r.db.QueryRow(`
 		SELECT s.id, s.course_id, s.lesson_id, s.student_id, COALESCE(u.name, ''), COALESCE(u.email, ''), s.teacher_id,
-		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.created_at, s.updated_at, s.reviewed_at
+		       s.file_name, s.file_url, s.student_note, s.review_note, s.status, s.attempt_count, s.created_at, s.updated_at, s.reviewed_at
 		FROM lesson_submissions s
 		LEFT JOIN users u ON u.id = s.student_id
 		WHERE s.id=$1 AND s.course_id=$2 AND s.teacher_id=$3
@@ -315,7 +317,7 @@ func (r *EnrollmentRepo) ReviewLessonSubmissionByTeacher(teacherID, courseID, su
 		UPDATE lesson_submissions
 		SET status=$1, review_note=$2, reviewed_at=NOW(), updated_at=NOW()
 		WHERE id=$3 AND course_id=$4 AND teacher_id=$5
-		RETURNING id, course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, created_at, updated_at, reviewed_at
+		RETURNING id, course_id, lesson_id, student_id, teacher_id, file_name, file_url, student_note, review_note, status, attempt_count, created_at, updated_at, reviewed_at
 	`, string(status), reviewNote, submissionID, courseID, teacherID).Scan(
 		&submission.ID,
 		&submission.CourseID,
@@ -327,6 +329,7 @@ func (r *EnrollmentRepo) ReviewLessonSubmissionByTeacher(teacherID, courseID, su
 		&submission.StudentNote,
 		&submission.ReviewNote,
 		&statusValue,
+		&submission.AttemptCount,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
 		&submission.ReviewedAt,
@@ -357,6 +360,7 @@ func scanSubmissionRow(rows *sql.Rows) (domain.LessonSubmission, error) {
 		&submission.StudentNote,
 		&submission.ReviewNote,
 		&status,
+		&submission.AttemptCount,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
 		&submission.ReviewedAt,
@@ -383,6 +387,7 @@ func scanSubmissionQueryRow(row *sql.Row) (*domain.LessonSubmission, error) {
 		&submission.StudentNote,
 		&submission.ReviewNote,
 		&status,
+		&submission.AttemptCount,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
 		&submission.ReviewedAt,

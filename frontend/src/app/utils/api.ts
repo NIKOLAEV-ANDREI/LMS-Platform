@@ -67,6 +67,7 @@ export interface LessonSubmission {
   studentNote: string;
   reviewNote: string;
   status: "pending" | "approved" | "rejected";
+  attemptCount: number;
   createdAt: string;
   updatedAt: string;
   reviewedAt?: string;
@@ -292,6 +293,7 @@ class API {
       studentNote: String(raw.student_note ?? raw.studentNote ?? ""),
       reviewNote: String(raw.review_note ?? raw.reviewNote ?? ""),
       status: (raw.status || "pending") as "pending" | "approved" | "rejected",
+      attemptCount: Number(raw.attempt_count ?? raw.attemptCount ?? 1),
       createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
       updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ""),
       reviewedAt: raw.reviewed_at ?? raw.reviewedAt ?? undefined,
