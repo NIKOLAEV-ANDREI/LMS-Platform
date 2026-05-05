@@ -31,7 +31,6 @@ export default function CoursePage() {
   const [coursePassword, setCoursePassword] = useState("");
   const [checkingPassword, setCheckingPassword] = useState(false);
   const [studentSubmissions, setStudentSubmissions] = useState<Record<string, LessonSubmission>>({});
-  const [teacherSubmissions, setTeacherSubmissions] = useState<LessonSubmission[]>([]);
 
   const moduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const openFromStateApplied = useRef(false);
@@ -60,16 +59,9 @@ export default function CoursePage() {
           indexed[submission.lessonId] = submission;
         }
         setStudentSubmissions(indexed);
-        setTeacherSubmissions([]);
-      } else if (userData.role === "teacher" && courseData.teacherId === userData.id) {
-        setProgress(null);
-        setStudentSubmissions({});
-        const { submissions } = await api.getTeacherCourseSubmissions(id, "pending");
-        setTeacherSubmissions(submissions);
       } else {
         setProgress(null);
         setStudentSubmissions({});
-        setTeacherSubmissions([]);
       }
     } catch (error: any) {
       const message = String(error?.message || "");
@@ -325,23 +317,6 @@ export default function CoursePage() {
                 <span className="font-medium">{progress.progress}%</span>
               </div>
               <Progress value={progress.progress} className="h-2" />
-            </CardContent>
-          </Card>
-        )}
-
-        {isTeacherOwner && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Работы на проверку</CardTitle>
-              <CardDescription>Откройте отдельный раздел для проверки и подтверждения работ.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">
-                На проверке: {formatRuCount(teacherSubmissions.length, "работа", "работы", "работ")}
-              </p>
-              <Link to={`/courses/${course.id}/reviews`}>
-                <Button>Открыть раздел проверки</Button>
-              </Link>
             </CardContent>
           </Card>
         )}

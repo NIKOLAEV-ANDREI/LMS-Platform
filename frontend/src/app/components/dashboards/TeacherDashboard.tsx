@@ -391,7 +391,7 @@ export default function TeacherDashboard() {
                       Студент: {item.studentName}
                     </p>
                   </div>
-                  <Link to={`/courses/${item.courseId}/reviews`}>
+                  <Link to={`/teacher/reviews?courseId=${item.courseId}`}>
                     <Button size="sm">Проверить</Button>
                   </Link>
                 </div>
@@ -518,7 +518,7 @@ export default function TeacherDashboard() {
                       </Link>
                     </div>
 
-                    <Link to={`/courses/${course.id}/reviews`}>
+                    <Link to={`/teacher/reviews?courseId=${course.id}`}>
                       <Button variant="outline" className="h-11 w-full">
                         Проверка работ
                       </Button>

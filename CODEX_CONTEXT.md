@@ -1970,3 +1970,39 @@ Validation:
 - Teacher dashboard review card now shows 5 latest pending submissions (newest -> oldest) with course, file, lesson, student, and quick link to review.
 - Files: frontend/src/app/components/dashboards/StudentDashboard.tsx, frontend/src/app/components/dashboards/TeacherDashboard.tsx
 - Validation: npm run build - OK
+
+## 98) 2026-05-05 - Unified teacher review workspace
+- Added unified page for teacher submissions: /teacher/reviews (all courses in one place).
+- New component: rontend/src/app/components/courses/TeacherReviewsPage.tsx.
+- Features: aggregated submissions across all teacher courses, filters by status/course, inline approve/reject with reason, attempt counter, quick links/downloads.
+- Added route in rontend/src/app/routes.tsx.
+- Added teacher nav button Проверка работ in layout (rontend/src/app/components/Layout.tsx).
+- Teacher dashboard review-card action now opens unified page with pre-filter (/teacher/reviews?courseId=...).
+- Validation: 
+pm run check:encoding - OK, 
+pm run build - OK.
+
+## 99) 2026-05-05 - Teacher reviews UI polish
+- Removed redundant Дашборд button from unified teacher reviews page (left only Назад).
+- Replaced native course <select> filter with styled UI Select component for consistent design.
+- File: frontend/src/app/components/courses/TeacherReviewsPage.tsx
+- Validation: npm run build - OK.
+
+## 100) 2026-05-05 - Removed per-course review section
+- Removed legacy route /courses/:id/reviews and detached old per-course review page from routing.
+- Deleted rontend/src/app/components/courses/CourseSubmissionsPage.tsx.
+- Removed teacher-only review block from course page (CoursePage) so course view no longer contains embedded review section.
+- Updated teacher course card button to unified review hub: /teacher/reviews?courseId=....
+- Files: frontend/src/app/routes.tsx, frontend/src/app/components/courses/CoursePage.tsx, frontend/src/app/components/dashboards/TeacherDashboard.tsx.
+- Validation: npm run build - OK.
+
+## 101) 2026-05-05 - Fixed teacher dashboard review-card 404
+- Root cause: teacher dashboard review card still pointed to removed route /courses/:id/reviews.
+- Fix: updated link to unified review page /teacher/reviews?courseId=... in rontend/src/app/components/dashboards/TeacherDashboard.tsx.
+- Validation: npm run build - OK.
+
+## 102) 2026-05-05 - Fixed mojibake in TeacherDashboard
+- Restored UTF-8 Russian text in rontend/src/app/components/dashboards/TeacherDashboard.tsx.
+- Verified no mojibake markers remain.
+- Validation: 
+pm run check:encoding - OK.
