@@ -23,6 +23,10 @@ type EditableQuestion = {
   correctAnswer: number;
 };
 
+const MIN_TEST_OPTIONS = 2;
+const MAX_TEST_OPTIONS = 8;
+const DEFAULT_TEST_OPTIONS = 4;
+
 type LessonDraft = {
   lessonForm: {
     title: string;
@@ -120,7 +124,10 @@ export default function LessonEditor() {
               id: question.id || `q-${Date.now()}-${index}`,
               type: question.type || "single",
               question: question.question || "",
-              options: Array.isArray(question.options) && question.options.length > 0 ? question.options : ["", "", "", ""],
+              options:
+                Array.isArray(question.options) && question.options.length > 0
+                  ? question.options
+                  : Array.from({ length: DEFAULT_TEST_OPTIONS }, () => ""),
               correctAnswer: typeof question.correctAnswer === "number" ? question.correctAnswer : 0,
             }))
           : [];
@@ -169,7 +176,7 @@ export default function LessonEditor() {
         id: `q-${Date.now()}-${Math.random()}`,
         type: "single",
         question: "",
-        options: ["", "", "", ""],
+        options: Array.from({ length: DEFAULT_TEST_OPTIONS }, () => ""),
         correctAnswer: 0,
       },
     ]);
@@ -205,6 +212,34 @@ export default function LessonEditor() {
 
   const removeQuestion = (index: number) => {
     setTestQuestions((prev) => prev.filter((_, current) => current !== index));
+  };
+
+  const updateQuestionOptionsCount = (questionIndex: number, nextCountValue: string) => {
+    const parsedCount = Number(nextCountValue);
+    if (!Number.isFinite(parsedCount)) return;
+    const count = Math.max(MIN_TEST_OPTIONS, Math.min(MAX_TEST_OPTIONS, parsedCount));
+
+    setTestQuestions((prev) => {
+      const next = [...prev];
+      const question = next[questionIndex];
+      if (!question) return prev;
+
+      const options = [...question.options];
+      if (options.length < count) {
+        while (options.length < count) {
+          options.push("");
+        }
+      } else if (options.length > count) {
+        options.length = count;
+      }
+
+      next[questionIndex] = {
+        ...question,
+        options,
+        correctAnswer: Math.min(question.correctAnswer, count - 1),
+      };
+      return next;
+    });
   };
 
   const formatFileSize = (bytes: number) => {
@@ -507,7 +542,30 @@ export default function LessonEditor() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <CharCounter value={question.question || ""} max={LIMITS.questionText} />
-                        <Label className="text-sm">Варианты ответов</Label>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Label className="text-sm">Варианты ответов</Label>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Кол-во:</span>
+                            <Select
+                              value={String(question.options.length)}
+                              onValueChange={(value) => updateQuestionOptionsCount(questionIndex, value)}
+                            >
+                              <SelectTrigger className="h-8 w-20">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Array.from({ length: MAX_TEST_OPTIONS - MIN_TEST_OPTIONS + 1 }, (_, idx) => {
+                                  const value = String(MIN_TEST_OPTIONS + idx);
+                                  return (
+                                    <SelectItem key={`${question.id}-options-${value}`} value={value}>
+                                      {value}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
                         {question.options.map((option, optionIndex) => (
                           <div key={`${question.id}-${optionIndex}`} className="flex items-center gap-2">
                             <Input

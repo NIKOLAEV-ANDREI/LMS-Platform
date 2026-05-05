@@ -347,7 +347,12 @@ export default function AdminUserPage() {
                       <div className="flex items-center justify-between">
                         <div className="min-w-0">
                           <div className="font-semibold">{course.title}</div>
-                          <div className="break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{course.description}</div>
+                          <div
+                            className="line-clamp-4 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]"
+                            title={course.description}
+                          >
+                            {course.description}
+                          </div>
                         </div>
                         <Badge variant={course.status === "approved" ? "default" : "secondary"}>
                           {statusLabel[course.status || ""] || course.status}
@@ -394,7 +399,12 @@ export default function AdminUserPage() {
                     <div key={course.id} className="flex items-center justify-between gap-3 rounded-lg border p-4">
                       <div className="min-w-0">
                         <div className="font-semibold">{course.title}</div>
-                        <div className="break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{course.description}</div>
+                        <div
+                          className="line-clamp-4 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]"
+                          title={course.description}
+                        >
+                          {course.description}
+                        </div>
                       </div>
                       <Button onClick={() => restoreCourse(course.id)}>Восстановить</Button>
                     </div>

@@ -359,8 +359,8 @@ export default function CourseEditor() {
               <Accordion type="single" collapsible className="w-full">
                 {course.modules.map((module, moduleIndex) => (
                   <AccordionItem key={module.id} value={module.id}>
-                    <div className="flex items-center gap-2">
-                      <AccordionTrigger className="flex-1 min-w-0">
+                    <div className="relative">
+                      <AccordionTrigger className="w-full min-w-0 rounded-md px-3 pr-24 text-left hover:no-underline">
                         <div className="flex min-w-0 items-center gap-2 text-left">
                           <span className="shrink-0 font-semibold">Модуль {moduleIndex + 1}:</span>
                           <span className="min-w-0 flex-1 truncate" title={module.title}>
@@ -369,24 +369,26 @@ export default function CourseEditor() {
                           <span className="shrink-0 text-sm text-muted-foreground">({module.lessons.length} урок.)</span>
                         </div>
                       </AccordionTrigger>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditModule(module)}
-                        className="h-8 w-8"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeModule(module)}
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditModule(module)}
+                          className="h-8 w-8"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeModule(module)}
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
 
                     <AccordionContent>

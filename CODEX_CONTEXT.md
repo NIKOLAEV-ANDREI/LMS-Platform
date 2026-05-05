@@ -1822,3 +1822,74 @@ Validation:
 - go test ./... (backend) - OK
 - npm run check:encoding (frontend) - OK
 - npm run build (frontend) - OK
+
+## 87) Admin teacher-course description clamp to 4 lines (2026-05-05)
+Change:
+- In admin user page, course description for teacher courses is now clamped to 4 lines with ellipsis.
+- Applied to active courses and deleted courses blocks.
+- Added full text in title attribute on hover.
+
+File:
+- frontend/src/app/components/dashboards/AdminUserPage.tsx
+
+Validation:
+- npm run build - OK
+
+## 88) Teacher can choose answer count per test question (2026-05-05)
+Changes:
+- In lesson test editor, each question now has a "Кол-во" selector for answer options.
+- Teacher can choose from 2 to 8 options per question.
+- When option count changes:
+  - new empty options are added if count increases;
+  - extra options are removed if count decreases;
+  - correctAnswer index is auto-clamped to valid range.
+- Default option count for new questions and fallback loaded questions is 4.
+
+File:
+- frontend/src/app/components/courses/LessonEditor.tsx
+
+Validation:
+- npm run build - OK
+- npm run check:encoding - failed due existing mojibake strings in LessonEditor.tsx
+
+## 89) Fix LessonEditor encoding + keep answer-count selector (2026-05-05)
+What was done:
+- Restored `LessonEditor.tsx` from previous clean revision to remove mojibake.
+- Reapplied feature safely:
+  - teacher selects answer options count per question (2..8)
+  - default options count is 4
+  - shrinking options auto-adjusts correct answer index
+
+File:
+- frontend/src/app/components/courses/LessonEditor.tsx
+
+Validation:
+- npm run check:encoding - OK
+- npm run build - OK
+
+## 90) CourseEditor module row behavior aligned with course view (2026-05-05)
+Changes:
+- In course editor module list, module expand/collapse now works by clicking the whole module row field (AccordionTrigger spans full width).
+- Moved module edit/delete icons into the right side of the same module field.
+- Header layout now uses relative container + absolute right action group, with trigger padding adjusted (`pr-24`).
+
+File:
+- frontend/src/app/components/courses/CourseEditor.tsx
+
+Validation:
+- npm run build - OK
+
+## 91) CourseEditor encoding recovery + module row click area (2026-05-05)
+Changes:
+- Restored `CourseEditor.tsx` from clean revision to fix mojibake.
+- Reapplied module-row UX update safely:
+  - module opens by clicking whole row field (full-width trigger)
+  - module edit/delete icons moved to right side of same row
+- Trigger padding adjusted (`pr-24`) to avoid overlap with right action icons.
+
+File:
+- frontend/src/app/components/courses/CourseEditor.tsx
+
+Validation:
+- npm run check:encoding - OK
+- npm run build - OK
