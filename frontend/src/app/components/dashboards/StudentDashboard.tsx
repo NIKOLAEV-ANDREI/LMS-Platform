@@ -3,25 +3,51 @@ import { Link } from "react-router";
 import { Award, BookOpen, Clock, Lock, TrendingUp, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
-import { api, Course, Progress as CourseProgress, User } from "../../utils/api";
+import { api, Course, LessonSubmission, Progress as CourseProgress, User } from "../../utils/api";
 import { LIMITS } from "../../utils/limits";
 import { formatRuCount } from "../../utils/plural";
+
+type SubmissionReviewUpdate = {
+  key: string;
+  courseId: string;
+  courseTitle: string;
+  lessonTitle: string;
+  fileName: string;
+  status: "approved" | "rejected";
+  reviewedAt: string;
+};
+
+type ReviewedSubmissionsSnapshot = {
+  updates: SubmissionReviewUpdate[];
+  newlyApproved: number;
+  newlyRejected: number;
+};
 
 export default function StudentDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [progress, setProgress] = useState<Record<string, CourseProgress>>({});
+  const [reviewUpdates, setReviewUpdates] = useState<SubmissionReviewUpdate[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
+    loadData(true);
+
+    const refreshTimer = window.setInterval(() => {
+      loadData(false);
+    }, 30000);
+
+    return () => {
+      window.clearInterval(refreshTimer);
+    };
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (withLoginNotification = false) => {
     try {
       const { user: userData } = await api.getSession();
       setUser(userData);
@@ -45,11 +71,109 @@ export default function StudentDashboard() {
         }
       }
       setProgress(progressData);
+
+      const submissionSnapshot = await collectReviewedSubmissionsSnapshot(userData.id, enrolled);
+      setReviewUpdates(submissionSnapshot.updates);
+
+      if (withLoginNotification) {
+        if (submissionSnapshot.newlyApproved > 0) {
+          toast.success(`Принято: ${formatRuCount(submissionSnapshot.newlyApproved, "работа", "работы", "работ")}`);
+        }
+        if (submissionSnapshot.newlyRejected > 0) {
+          toast.error(`Отклонено: ${formatRuCount(submissionSnapshot.newlyRejected, "работа", "работы", "работ")}`);
+        }
+      }
     } catch (error: any) {
       toast.error(error.message || "Ошибка загрузки данных");
     } finally {
       setLoading(false);
     }
+  };
+
+  const collectReviewedSubmissionsSnapshot = async (
+    studentId: string,
+    enrolled: Course[],
+  ): Promise<ReviewedSubmissionsSnapshot> => {
+    const storageKey = `lms:student:submission-status:${studentId}`;
+    let previousStatuses: Record<string, string> = {};
+    try {
+      previousStatuses = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      if (!previousStatuses || typeof previousStatuses !== "object" || Array.isArray(previousStatuses)) {
+        previousStatuses = {};
+      }
+    } catch {
+      previousStatuses = {};
+    }
+
+    const allSubmissions: LessonSubmission[] = [];
+    const submissionResults = await Promise.all(
+      enrolled.map(async (course) => {
+        try {
+          return await api.getMyCourseSubmissions(course.id);
+        } catch {
+          return { submissions: [] as LessonSubmission[] };
+        }
+      }),
+    );
+    for (const result of submissionResults) {
+      allSubmissions.push(...result.submissions);
+    }
+
+    const currentStatuses: Record<string, string> = {};
+    const reviewUpdatesList: SubmissionReviewUpdate[] = [];
+    let newlyApproved = 0;
+    let newlyRejected = 0;
+
+    const courseTitleById = new Map(enrolled.map((course) => [course.id, course.title]));
+    const lessonTitleByCourseLesson = new Map<string, string>();
+    for (const course of enrolled) {
+      for (const module of course.modules) {
+        for (const lesson of module.lessons) {
+          lessonTitleByCourseLesson.set(`${course.id}:${lesson.id}`, lesson.title);
+        }
+      }
+    }
+
+    for (const submission of allSubmissions) {
+      const key = `${submission.courseId}:${submission.id}`;
+      currentStatuses[key] = submission.status;
+
+      if (submission.status !== "approved" && submission.status !== "rejected") {
+        continue;
+      }
+
+      if (previousStatuses[key] !== submission.status) {
+        if (submission.status === "approved") {
+          newlyApproved += 1;
+        } else {
+          newlyRejected += 1;
+        }
+      }
+
+      reviewUpdatesList.push({
+        key,
+        courseId: submission.courseId,
+        courseTitle: courseTitleById.get(submission.courseId) || `Курс #${submission.courseId}`,
+        lessonTitle:
+          lessonTitleByCourseLesson.get(`${submission.courseId}:${submission.lessonId}`) || `Урок #${submission.lessonId}`,
+        fileName: submission.fileName || "Без названия",
+        status: submission.status,
+        reviewedAt: submission.reviewedAt || submission.updatedAt || submission.createdAt || "",
+      });
+    }
+
+    reviewUpdatesList.sort((a, b) => {
+      const aTime = Date.parse(a.reviewedAt || "");
+      const bTime = Date.parse(b.reviewedAt || "");
+      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+    });
+
+    localStorage.setItem(storageKey, JSON.stringify(currentStatuses));
+    return {
+      updates: reviewUpdatesList.slice(0, 5),
+      newlyApproved,
+      newlyRejected,
+    };
   };
 
   const handleEnroll = async (course: Course) => {
@@ -137,6 +261,48 @@ export default function StudentDashboard() {
           </Card>
         </div>
 
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader>
+            <CardTitle>Обновлен статус проверки работ</CardTitle>
+            <CardDescription>Показаны 5 последних проверенных работ.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {reviewUpdates.length === 0 ? (
+              <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
+                Пока нет обновлений по проверке ваших работ.
+              </div>
+            ) : (
+              reviewUpdates.map((update) => (
+                <div key={update.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="truncate text-sm font-medium" title={update.courseTitle}>
+                      Курс: {update.courseTitle}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground" title={update.fileName}>
+                      Работа: {update.fileName}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground" title={update.lessonTitle}>
+                      Урок: {update.lessonTitle}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {update.status === "approved" ? (
+                      <Badge className="bg-green-600">Принято</Badge>
+                    ) : (
+                      <Badge variant="destructive">Отклонено</Badge>
+                    )}
+                    <Link to={`/courses/${update.courseId}`}>
+                      <Button size="sm" variant="outline">
+                        Перейти к курсу
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
         <div>
           <div className="mb-4 flex items-center gap-2">
             <h2 className="text-2xl font-semibold leading-tight">Мои курсы</h2>
@@ -163,6 +329,7 @@ export default function StudentDashboard() {
               </Button>
             </Link>
           </div>
+
           {enrolledCourses.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
@@ -281,9 +448,7 @@ export default function StudentDashboard() {
 
                     <div className="flex gap-2">
                       <Link to={`/courses/${course.id}`} className="flex-1">
-                        <Button className="h-11 w-full">
-                          Просмотреть
-                        </Button>
+                        <Button className="h-11 w-full">Просмотреть</Button>
                       </Link>
                       <Button onClick={() => handleEnroll(course)} className="h-11 flex-1">
                         Записаться

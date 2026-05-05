@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { BookOpen, Edit, Lock, Plus, Trash2, TrendingUp, Unlock, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -22,12 +22,24 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import CharCounter from "../shared/CharCounter";
-import { api, Course, User } from "../../utils/api";
+import { api, Course, LessonSubmission, User } from "../../utils/api";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
+import { formatRuCount } from "../../utils/plural";
+
+type PendingReviewItem = {
+  key: string;
+  courseId: string;
+  courseTitle: string;
+  lessonTitle: string;
+  fileName: string;
+  studentName: string;
+  createdAt: string;
+};
 
 export default function TeacherDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [pendingReviewItems, setPendingReviewItems] = useState<PendingReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newCourse, setNewCourse] = useState({
@@ -37,21 +49,108 @@ export default function TeacherDashboard() {
   });
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (withLoginNotification = false) => {
     try {
       const { user: userData } = await api.getSession();
       setUser(userData);
 
       const { courses: allCourses } = await api.getCourses();
-      setCourses(allCourses.filter((course) => course.teacherId === userData.id));
+      const teacherCourses = allCourses.filter((course) => course.teacherId === userData.id);
+      setCourses(teacherCourses);
+
+      const pendingData = await collectPendingReviewData(teacherCourses);
+      setPendingReviewItems(pendingData.items.slice(0, 5));
+
+      if (withLoginNotification) {
+        await notifyPendingReviewWork(userData.id, pendingData.pendingIds);
+      }
     } catch (error: any) {
       toast.error(error.message || "Ошибка загрузки данных");
     } finally {
       setLoading(false);
     }
+  };
+
+  const collectPendingReviewData = async (
+    teacherCourses: Course[],
+  ): Promise<{ pendingIds: string[]; items: PendingReviewItem[] }> => {
+    if (teacherCourses.length === 0) {
+      return { pendingIds: [], items: [] };
+    }
+
+    const lessonTitleByKey = new Map<string, string>();
+    for (const course of teacherCourses) {
+      for (const module of course.modules) {
+        for (const lesson of module.lessons) {
+          lessonTitleByKey.set(`${course.id}:${lesson.id}`, lesson.title);
+        }
+      }
+    }
+
+    const submissionRows = await Promise.all(
+      teacherCourses.map(async (course) => {
+        try {
+          const { submissions } = await api.getTeacherCourseSubmissions(course.id, "pending");
+          return { course, submissions };
+        } catch {
+          return { course, submissions: [] as LessonSubmission[] };
+        }
+      }),
+    );
+
+    const pendingIds: string[] = [];
+    const items: PendingReviewItem[] = [];
+
+    for (const row of submissionRows) {
+      for (const submission of row.submissions) {
+        const key = `${row.course.id}:${submission.id}`;
+        pendingIds.push(key);
+        items.push({
+          key,
+          courseId: row.course.id,
+          courseTitle: row.course.title,
+          lessonTitle: lessonTitleByKey.get(`${row.course.id}:${submission.lessonId}`) || `Урок #${submission.lessonId}`,
+          fileName: submission.fileName || "Без названия",
+          studentName: submission.studentName || "Студент",
+          createdAt: submission.createdAt || "",
+        });
+      }
+    }
+
+    items.sort((a, b) => {
+      const aTime = Date.parse(a.createdAt || "");
+      const bTime = Date.parse(b.createdAt || "");
+      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+    });
+
+    return { pendingIds, items };
+  };
+
+  const notifyPendingReviewWork = async (teacherId: string, currentPendingIds: string[]) => {
+    const storageKey = `lms:teacher:pending-review:${teacherId}`;
+    let previousPendingIds: string[] = [];
+    try {
+      previousPendingIds = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      if (!Array.isArray(previousPendingIds)) previousPendingIds = [];
+    } catch {
+      previousPendingIds = [];
+    }
+
+    const previousSet = new Set(previousPendingIds);
+    const newPendingCount = currentPendingIds.filter((id) => !previousSet.has(id)).length;
+
+    if (currentPendingIds.length > 0) {
+      if (previousPendingIds.length === 0) {
+        toast.info(`У вас ${formatRuCount(currentPendingIds.length, "работа", "работы", "работ")} на проверке`);
+      } else if (newPendingCount > 0) {
+        toast.info(`Новых работ на проверку: ${newPendingCount}`);
+      }
+    }
+
+    localStorage.setItem(storageKey, JSON.stringify(currentPendingIds));
   };
 
   const handleCreateCourse = async (event: React.FormEvent) => {
@@ -264,6 +363,42 @@ export default function TeacherDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader>
+            <CardTitle>Требуется проверка работ</CardTitle>
+            <CardDescription>Выберите курс и перейдите в раздел проверки.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingReviewItems.length === 0 ? (
+              <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
+                Сейчас нет работ, требующих проверки.
+              </div>
+            ) : (
+              pendingReviewItems.map((item) => (
+                <div key={item.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="truncate text-sm font-medium" title={item.courseTitle}>
+                      {item.courseTitle}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground" title={item.fileName}>
+                      Работа: {item.fileName}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground" title={item.lessonTitle}>
+                      Урок: {item.lessonTitle}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground" title={item.studentName}>
+                      Студент: {item.studentName}
+                    </p>
+                  </div>
+                  <Link to={`/courses/${item.courseId}/reviews`}>
+                    <Button size="sm">Проверить</Button>
+                  </Link>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
 
         <div>
           <div className="mb-4 flex items-center gap-2">

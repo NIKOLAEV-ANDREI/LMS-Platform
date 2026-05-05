@@ -1,6 +1,16 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link, useLocation } from "react-router";
 import { Button } from "./ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { api, User } from "../utils/api";
 import { GraduationCap, Home, User as UserIcon, LogOut, Users } from "lucide-react";
 
@@ -13,6 +23,7 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -97,20 +108,35 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
                 </Button>
               </Link>
 
-              <Button onClick={handleLogout} variant="ghost" size="sm" className="gap-2">
+              <Button onClick={() => setLogoutDialogOpen(true)} variant="ghost" size="sm" className="gap-2">
                 <LogOut className="h-4 w-4" />
                 Выход
               </Button>
             </nav>
 
             <div className="flex md:hidden items-center gap-2">
-              <Button onClick={handleLogout} variant="ghost" size="sm">
+              <Button onClick={() => setLogoutDialogOpen(true)} variant="ghost" size="sm">
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </div>
       </header>
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Выйти из аккаунта?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы завершите текущую сессию и вернетесь на страницу входа.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleLogout}>Выйти</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <main className="lms-learning-background flex-1">
         <div className={fullWidth ? "w-full px-4 sm:px-6 lg:px-8 py-8" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"}>
