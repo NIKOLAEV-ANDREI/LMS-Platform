@@ -240,7 +240,7 @@ export default function AdminUserPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Профиль пользователя</h1>
-            <p className="text-muted-foreground">ID: {user.id}</p>
+            <p className="text-muted-foreground">Публичный ID: {user.publicId}</p>
           </div>
           <div className="flex items-center gap-2">
             {!user.blocked && (

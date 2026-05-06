@@ -14,15 +14,15 @@ func NewUserRepo(db *sql.DB) *UserRepo { return &UserRepo{db: db} }
 
 func (r *UserRepo) Create(user *domain.User) error {
 	return r.db.QueryRow(
-		`INSERT INTO users(name,email,password_hash,role,blocked,avatar_url) VALUES($1,$2,$3,$4,false,$5) RETURNING id`,
-		user.Name, user.Email, user.PasswordHash, user.Role, user.AvatarURL,
+		`INSERT INTO users(name,email,password_hash,role,blocked,avatar_url,public_id) VALUES($1,$2,$3,$4,false,$5,$6) RETURNING id`,
+		user.Name, user.Email, user.PasswordHash, user.Role, user.AvatarURL, user.PublicID,
 	).Scan(&user.ID)
 }
 
 func (r *UserRepo) ByEmail(email string) (*domain.User, error) {
 	var u domain.User
-	err := r.db.QueryRow(`SELECT id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE email = $1`, email).
-		Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL)
+	err := r.db.QueryRow(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE email = $1`, email).
+		Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -34,8 +34,21 @@ func (r *UserRepo) ByEmail(email string) (*domain.User, error) {
 
 func (r *UserRepo) ByID(id int64) (*domain.User, error) {
 	var u domain.User
-	err := r.db.QueryRow(`SELECT id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL)
+	err := r.db.QueryRow(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (r *UserRepo) ByPublicID(publicID string) (*domain.User, error) {
+	var u domain.User
+	err := r.db.QueryRow(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE public_id = $1`, publicID).
+		Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -46,7 +59,7 @@ func (r *UserRepo) ByID(id int64) (*domain.User, error) {
 }
 
 func (r *UserRepo) List() ([]domain.User, error) {
-	rows, err := r.db.Query(`SELECT id,name,email,password_hash,role,blocked,avatar_url FROM users ORDER BY id DESC`)
+	rows, err := r.db.Query(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +68,7 @@ func (r *UserRepo) List() ([]domain.User, error) {
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL); err != nil {
+		if err := rows.Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.Blocked, &u.AvatarURL); err != nil {
 			return nil, err
 		}
 		users = append(users, u)

@@ -64,6 +64,10 @@ func (r *EnrollmentRepo) ListByStudent(userID int64) ([]domain.Enrollment, error
 	return out, rows.Err()
 }
 
+func (r *EnrollmentRepo) ListCourseStudentsByTeacher(teacherID, courseID int64) ([]domain.User, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *EnrollmentRepo) CompleteLesson(userID, courseID, lessonID int64) (*domain.CourseProgress, error) {
 	return nil, errors.New("not implemented")
 }

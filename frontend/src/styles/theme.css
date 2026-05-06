@@ -168,6 +168,24 @@
   margin: 0 0 0.8rem 1.25rem;
 }
 
+@layer components {
+  .course-header-icon-button {
+    color: rgba(255, 255, 255, 0.95);
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 0.5rem;
+  }
+
+  .course-header-icon-button:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .course-header-icon-button-danger:hover {
+    color: #ffffff;
+    background-color: #ef4444;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

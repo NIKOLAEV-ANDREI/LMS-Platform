@@ -12,6 +12,7 @@ const (
 
 type User struct {
 	ID           int64  `json:"id"`
+	PublicID     string `json:"public_id"`
 	Name         string `json:"name"`
 	Email        string `json:"email"`
 	PasswordHash string `json:"-"`
@@ -22,10 +23,13 @@ type User struct {
 
 type Course struct {
 	ID                 int64    `json:"id"`
+	PublicID           string   `json:"public_id"`
 	Title              string   `json:"title"`
 	Description        string   `json:"description"`
 	TeacherID          int64    `json:"teacher_id"`
+	TeacherPublicID    string   `json:"teacher_public_id,omitempty"`
 	TeacherName        string   `json:"teacher_name,omitempty"`
+	EnrolledStudents   []int64  `json:"enrolled_students,omitempty"`
 	Status             string   `json:"status"`
 	HasPassword        bool     `json:"has_password"`
 	AccessPasswordHash string   `json:"-"`
@@ -49,16 +53,16 @@ type Module struct {
 }
 
 type Lesson struct {
-	ID          int64              `json:"id"`
-	ModuleID    int64              `json:"module_id"`
-	Title       string             `json:"title"`
-	Content     string             `json:"content"`
-	Type        string             `json:"type"`
-	VideoURL    string             `json:"video_url,omitempty"`
-	RequiresReview bool            `json:"requires_review"`
-	Attachments []LessonAttachment `json:"attachments,omitempty"`
-	Test        *LessonTest        `json:"test,omitempty"`
-	Order       int                `json:"order"`
+	ID             int64              `json:"id"`
+	ModuleID       int64              `json:"module_id"`
+	Title          string             `json:"title"`
+	Content        string             `json:"content"`
+	Type           string             `json:"type"`
+	VideoURL       string             `json:"video_url,omitempty"`
+	RequiresReview bool               `json:"requires_review"`
+	Attachments    []LessonAttachment `json:"attachments,omitempty"`
+	Test           *LessonTest        `json:"test,omitempty"`
+	Order          int                `json:"order"`
 }
 
 type LessonAttachment struct {

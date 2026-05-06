@@ -24,7 +24,12 @@ func (s *CourseService) CreateByTeacher(teacherID int64, title, description stri
 	if err := validateCoursePayload(title, description); err != nil {
 		return nil, err
 	}
+	publicID, err := generatePublicID()
+	if err != nil {
+		return nil, err
+	}
 	course := &domain.Course{
+		PublicID:    publicID,
 		Title:       title,
 		Description: description,
 		TeacherID:   teacherID,
@@ -38,6 +43,16 @@ func (s *CourseService) CreateByTeacher(teacherID int64, title, description stri
 
 func (s *CourseService) ListPublicCourses() ([]domain.Course, error) {
 	return s.courses.ListApproved()
+}
+
+func (s *CourseService) SearchPublicCourses(query, searchBy string) ([]domain.Course, error) {
+	searchBy = strings.TrimSpace(strings.ToLower(searchBy))
+	switch searchBy {
+	case "", "all", "id", "title", "teacher":
+	default:
+		return nil, errors.New("invalid search filter")
+	}
+	return s.courses.SearchApproved(query, searchBy)
 }
 
 func (s *CourseService) CourseByID(courseID int64) (*domain.Course, error) {
@@ -120,6 +135,10 @@ func (s *CourseService) UpdateProgress(studentID, courseID int64, progress int) 
 
 func (s *CourseService) StudentEnrollments(studentID int64) ([]domain.Enrollment, error) {
 	return s.enrollments.ListByStudent(studentID)
+}
+
+func (s *CourseService) ListCourseStudentsByTeacher(teacherID, courseID int64) ([]domain.User, error) {
+	return s.enrollments.ListCourseStudentsByTeacher(teacherID, courseID)
 }
 
 func (s *CourseService) CompleteLesson(studentID, courseID, lessonID int64) (*domain.CourseProgress, error) {
@@ -538,14 +557,14 @@ func (s *CourseService) AddLessonByTeacher(teacherID, courseID int64, moduleID i
 	}
 
 	lesson := &domain.Lesson{
-		ModuleID:    moduleID,
-		Title:       title,
-		Content:     content,
-		Type:        lessonType,
-		VideoURL:    videoURL,
+		ModuleID:       moduleID,
+		Title:          title,
+		Content:        content,
+		Type:           lessonType,
+		VideoURL:       videoURL,
 		RequiresReview: requiresReview,
-		Attachments: attachments,
-		Test:        test,
+		Attachments:    attachments,
+		Test:           test,
 	}
 	if err := s.courses.AddLesson(lesson); err != nil {
 		return nil, err
@@ -599,14 +618,14 @@ func (s *CourseService) AddLessonByAdmin(courseID, moduleID int64, title, conten
 	}
 
 	lesson := &domain.Lesson{
-		ModuleID:    moduleID,
-		Title:       title,
-		Content:     content,
-		Type:        lessonType,
-		VideoURL:    videoURL,
+		ModuleID:       moduleID,
+		Title:          title,
+		Content:        content,
+		Type:           lessonType,
+		VideoURL:       videoURL,
 		RequiresReview: requiresReview,
-		Attachments: attachments,
-		Test:        test,
+		Attachments:    attachments,
+		Test:           test,
 	}
 	if err := s.courses.AddLesson(lesson); err != nil {
 		return nil, err
@@ -802,15 +821,15 @@ func (s *CourseService) UpdateLessonByTeacher(teacherID, courseID, moduleID, les
 	}
 
 	lesson := &domain.Lesson{
-		ID:          lessonID,
-		ModuleID:    moduleID,
-		Title:       title,
-		Content:     content,
-		Type:        lessonType,
-		VideoURL:    videoURL,
+		ID:             lessonID,
+		ModuleID:       moduleID,
+		Title:          title,
+		Content:        content,
+		Type:           lessonType,
+		VideoURL:       videoURL,
 		RequiresReview: requiresReview,
-		Attachments: attachments,
-		Test:        test,
+		Attachments:    attachments,
+		Test:           test,
 	}
 	if err := s.courses.UpdateLesson(lesson); err != nil {
 		return nil, err
@@ -875,15 +894,15 @@ func (s *CourseService) UpdateLessonByAdmin(courseID, moduleID, lessonID int64, 
 	}
 
 	lesson := &domain.Lesson{
-		ID:          lessonID,
-		ModuleID:    moduleID,
-		Title:       title,
-		Content:     content,
-		Type:        lessonType,
-		VideoURL:    videoURL,
+		ID:             lessonID,
+		ModuleID:       moduleID,
+		Title:          title,
+		Content:        content,
+		Type:           lessonType,
+		VideoURL:       videoURL,
 		RequiresReview: requiresReview,
-		Attachments: attachments,
-		Test:        test,
+		Attachments:    attachments,
+		Test:           test,
 	}
 	if err := s.courses.UpdateLesson(lesson); err != nil {
 		return nil, err

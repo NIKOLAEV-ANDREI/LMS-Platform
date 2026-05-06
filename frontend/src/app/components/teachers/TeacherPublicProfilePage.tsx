@@ -156,8 +156,8 @@ export default function TeacherPublicProfilePage() {
                 const isEnrolled = enrolledSet.has(course.id);
 
                 return (
-                  <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
-                    <CardHeader className="min-w-0 pb-4">
+                  <Card key={course.id} className="flex h-full flex-col overflow-hidden transition-shadow hover:shadow-lg">
+                    <CardHeader className="min-w-0 bg-[#27A5E7] pb-4 text-white">
                       {course.imageUrl && (
                         <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
                           <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
@@ -171,7 +171,7 @@ export default function TeacherPublicProfilePage() {
                         {course.title}
                       </CardTitle>
                       <CardDescription
-                        className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                        className="line-clamp-2 min-h-14 break-words text-white/90 [overflow-wrap:anywhere]"
                         title={course.description}
                       >
                         {course.description}

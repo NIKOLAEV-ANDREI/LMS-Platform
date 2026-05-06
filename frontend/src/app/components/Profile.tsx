@@ -703,13 +703,13 @@ export default function Profile() {
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {filteredTeacherCourses.map((course) => (
-                  <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
-                    <CardHeader className="min-w-0 pb-4">
+                  <Card key={course.id} className="flex h-full flex-col overflow-hidden transition-shadow hover:shadow-lg">
+                    <CardHeader className="min-w-0 bg-[#27A5E7] pb-4 text-white">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="course-header-icon-button h-8 w-8"
                           title={course.hasPassword ? "Снять пароль курса" : "Установить пароль курса"}
                           onClick={() => handleToggleTeacherCoursePassword(course)}
                           disabled={Boolean(courseActionId)}
@@ -718,7 +718,7 @@ export default function Profile() {
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                            <Button variant="ghost" size="icon" className="course-header-icon-button course-header-icon-button-danger h-8 w-8">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -750,14 +750,18 @@ export default function Profile() {
                         {course.title}
                       </CardTitle>
                       <CardDescription
-                        className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                        className="line-clamp-2 min-h-14 break-words text-white/90 [overflow-wrap:anywhere]"
                         title={course.description}
                       >
                         {course.description}
                       </CardDescription>
 
                       <div>
-                        {course.status === "approved" ? <Badge>Опубликован</Badge> : <Badge variant="secondary">Черновик</Badge>}
+                        {course.status === "approved" ? (
+                          <Badge className="border border-white/80 bg-white text-[#1B6FA0] hover:bg-white">Опубликован</Badge>
+                        ) : (
+                          <Badge className="border border-white/35 bg-black/25 text-white hover:bg-black/25">Черновик</Badge>
+                        )}
                       </div>
                     </CardHeader>
 

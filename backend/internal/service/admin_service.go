@@ -18,6 +18,54 @@ func NewAdminService(users repository.UserRepository, courses repository.CourseR
 	return &AdminService{users: users, courses: courses}
 }
 
+func (s *AdminService) CreateUser(name, email, password string, role domain.Role) (*domain.User, error) {
+	name = strings.TrimSpace(name)
+	email = strings.TrimSpace(strings.ToLower(email))
+	password = strings.TrimSpace(password)
+
+	if err := validateUserName(name); err != nil {
+		return nil, err
+	}
+	if err := validateEmail(email); err != nil {
+		return nil, err
+	}
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	if role != domain.RoleStudent && role != domain.RoleTeacher && role != domain.RoleAdmin {
+		return nil, errors.New("invalid role")
+	}
+
+	existing, err := s.users.ByEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, errors.New("email already exists")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	publicID, err := generatePublicID()
+	if err != nil {
+		return nil, err
+	}
+
+	user := &domain.User{
+		Name:         name,
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         role,
+		PublicID:     publicID,
+	}
+	if err := s.users.Create(user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
 func (s *AdminService) ListUsers() ([]domain.User, error) { return s.users.List() }
 
 func (s *AdminService) BlockUser(id int64, blocked bool) error {
@@ -51,6 +99,10 @@ func (s *AdminService) AllCourses() ([]domain.Course, error) { return s.courses.
 
 func (s *AdminService) UserByID(id int64) (*domain.User, error) {
 	return s.users.ByID(id)
+}
+
+func (s *AdminService) UserByPublicID(publicID string) (*domain.User, error) {
+	return s.users.ByPublicID(publicID)
 }
 
 func (s *AdminService) UpdateUserProfile(id int64, name, email, password string, avatarURL *string, removeAvatar bool) error {

@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { BookOpen, RotateCcw, ShieldCheck, Trash2, Users } from "lucide-react";
+import { BookOpen, Plus, RotateCcw, ShieldCheck, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import {
@@ -17,10 +17,13 @@ import {
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { api, Course, User } from "../../utils/api";
+import { applyTextLimit, LIMITS } from "../../utils/limits";
 
 type UsersTab = "active" | "deleted";
 type RoleFilter = "all" | "student" | "teacher" | "admin";
@@ -29,10 +32,19 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [usersTab, setUsersTab] = useState<UsersTab>("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "student" as "student" | "teacher" | "admin",
+  });
 
   useEffect(() => {
     loadData();
@@ -40,8 +52,12 @@ export default function AdminDashboard() {
 
   const loadData = async () => {
     try {
-      const { users: allUsers } = await api.getAllUsers();
-      const { courses: allCourses } = await api.getCourses();
+      const [{ user: sessionUser }, { users: allUsers }, { courses: allCourses }] = await Promise.all([
+        api.getSession(),
+        api.getAllUsers(),
+        api.getCourses(),
+      ]);
+      setCurrentUserId(sessionUser.id);
       setUsers(allUsers);
       setCourses(allCourses);
     } catch (error: any) {
@@ -52,6 +68,10 @@ export default function AdminDashboard() {
   };
 
   const handleRoleChange = async (userId: string, newRole: "student" | "teacher" | "admin") => {
+    if (userId === currentUserId) {
+      toast.error("Свою роль менять нельзя");
+      return;
+    }
     try {
       await api.updateUserRole(userId, newRole);
       toast.success("Роль пользователя изменена");
@@ -78,6 +98,49 @@ export default function AdminDashboard() {
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка восстановления пользователя");
+    }
+  };
+
+  const resetCreateUserForm = () => {
+    setNewUser({
+      name: "",
+      email: "",
+      password: "",
+      role: "student",
+    });
+  };
+
+  const handleCreateUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = newUser.name.trim();
+    const email = newUser.email.trim();
+    const password = newUser.password.trim();
+
+    if (!name || !email || !password) {
+      toast.error("Заполните все поля");
+      return;
+    }
+    if (password.length < LIMITS.passwordMin) {
+      toast.error(`Пароль должен содержать минимум ${LIMITS.passwordMin} символов`);
+      return;
+    }
+
+    try {
+      setCreatingUser(true);
+      await api.createUserAsAdmin({
+        name,
+        email,
+        password,
+        role: newUser.role,
+      });
+      toast.success("Пользователь создан");
+      setCreateDialogOpen(false);
+      resetCreateUserForm();
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка создания пользователя");
+    } finally {
+      setCreatingUser(false);
     }
   };
 
@@ -133,8 +196,10 @@ export default function AdminDashboard() {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Панель администратора</h1>
-          <p className="mt-1 text-muted-foreground">Управление пользователями и системой</p>
+          <div>
+            <h1 className="text-3xl font-bold">Панель администратора</h1>
+            <p className="mt-1 text-muted-foreground">Управление пользователями и системой</p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
@@ -181,8 +246,109 @@ export default function AdminDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Управление пользователями</CardTitle>
-            <CardDescription>Нажмите на строку пользователя, чтобы открыть его страницу</CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Управление пользователями</CardTitle>
+                <CardDescription>Нажмите на строку пользователя, чтобы открыть его страницу</CardDescription>
+              </div>
+
+              <Dialog
+                open={createDialogOpen}
+                onOpenChange={(open) => {
+                  setCreateDialogOpen(open);
+                  if (!open) resetCreateUserForm();
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Создать пользователя
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Новый пользователь</DialogTitle>
+                    <DialogDescription>Администратор может создать студента, учителя или администратора.</DialogDescription>
+                  </DialogHeader>
+
+                  <form onSubmit={handleCreateUser} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-create-user-name">Имя</Label>
+                      <Input
+                        id="admin-create-user-name"
+                        value={newUser.name}
+                        onChange={(event) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            name: applyTextLimit(event.target.value, LIMITS.userName, "Имя"),
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-create-user-email">Email</Label>
+                      <Input
+                        id="admin-create-user-email"
+                        type="email"
+                        value={newUser.email}
+                        onChange={(event) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            email: applyTextLimit(event.target.value, LIMITS.email, "Email"),
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-create-user-password">Пароль</Label>
+                      <Input
+                        id="admin-create-user-password"
+                        type="password"
+                        placeholder={`Минимум ${LIMITS.passwordMin} символов`}
+                        value={newUser.password}
+                        onChange={(event) =>
+                          setNewUser((prev) => ({
+                            ...prev,
+                            password: applyTextLimit(event.target.value, LIMITS.password, "Пароль"),
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="admin-create-user-role">Роль</Label>
+                      <Select
+                        value={newUser.role}
+                        onValueChange={(value) => setNewUser((prev) => ({ ...prev, role: value as typeof prev.role }))}
+                      >
+                        <SelectTrigger id="admin-create-user-role">
+                          <SelectValue placeholder="Выберите роль" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="student">Студент</SelectItem>
+                          <SelectItem value="teacher">Учитель</SelectItem>
+                          <SelectItem value="admin">Администратор</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={creatingUser}>
+                        Отмена
+                      </Button>
+                      <Button type="submit" disabled={creatingUser}>
+                        {creatingUser ? "Создание..." : "Создать"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
 
             <div className="flex flex-wrap gap-2">
               <Button variant={usersTab === "active" ? "default" : "outline"} onClick={() => setUsersTab("active")}>
@@ -235,13 +401,21 @@ export default function AdminDashboard() {
                   </TableRow>
                 ) : (
                   usersInTable.map((user) => (
-                    <TableRow key={user.id} className="cursor-pointer" onClick={() => navigate(`/admin/users/${user.id}`)}>
+                    <TableRow
+                      key={user.id}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/admin/users/${user.publicId || user.id}`)}
+                    >
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell onClick={(event) => event.stopPropagation()}>
+                        {user.id === currentUserId ? (
+                          <span className="text-xs text-muted-foreground">Свою роль менять нельзя</span>
+                        ) : null}
                         <Select
                           value={user.role}
-                          onValueChange={(value) => handleRoleChange(user.id, value as "student" | "teacher" | "admin")}
+                          onValueChange={(value) => handleRoleChange(user.publicId || user.id, value as "student" | "teacher" | "admin")}
+                          disabled={user.id === currentUserId}
                         >
                           <SelectTrigger className="w-[150px]">
                             <Badge variant={roleVariant[user.role]}>{roleLabel[user.role]}</Badge>
@@ -271,12 +445,12 @@ export default function AdminDashboard() {
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Отмена</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteUser(user.id)}>Удалить</AlertDialogAction>
+                                <AlertDialogAction onClick={() => handleDeleteUser(user.publicId || user.id)}>Удалить</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
                         ) : (
-                          <Button variant="ghost" size="sm" onClick={() => handleRestoreUser(user.id)}>
+                          <Button variant="ghost" size="sm" onClick={() => handleRestoreUser(user.publicId || user.id)}>
                             <RotateCcw className="h-4 w-4" />
                           </Button>
                         )}

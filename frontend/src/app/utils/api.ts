@@ -2,6 +2,7 @@
 
 export interface User {
   id: string;
+  publicId: string;
   email: string;
   name: string;
   role: 'student' | 'teacher' | 'admin';
@@ -14,10 +15,12 @@ export interface User {
 
 export interface Course {
   id: string;
+  publicId: string;
   title: string;
   description: string;
   imageUrl: string;
   teacherId: string;
+  teacherPublicId?: string;
   teacherName: string;
   createdAt: string;
   modules: Module[];
@@ -104,6 +107,7 @@ export interface Progress {
 export interface TeacherPublicProfile {
   teacher: {
     id: string;
+    publicId: string;
     name: string;
     email: string;
     avatarUrl?: string;
@@ -157,6 +161,7 @@ class API {
     { test: /review note is required for rejection/i, value: 'Добавьте комментарий при отклонении работы' },
     { test: /invalid review action/i, value: 'Некорректное действие проверки работы' },
     { test: /review note/i, value: 'Комментарий преподавателя слишком длинный' },
+    { test: /cannot change own role/i, value: 'Свою роль менять нельзя' },
     { test: /test lesson must have at least one question/i, value: 'Тестовый урок должен содержать минимум один вопрос' },
     { test: /question (\d+) type must be single, multiple or open/i, value: 'Укажите корректный тип вопроса (single, multiple или open)' },
     { test: /question (\d+) must have at least 2 options/i, value: 'В вопросе должно быть минимум 2 варианта ответа' },
@@ -169,6 +174,7 @@ class API {
     { test: /progress must be 0\.\.100/i, value: 'Прогресс должен быть в диапазоне от 0 до 100' },
     { test: /course password required/i, value: 'Требуется пароль курса' },
     { test: /invalid course password/i, value: 'Неверный пароль курса' },
+    { test: /invalid search filter/i, value: 'Некорректный фильтр поиска' },
   ];
 
   private localizeErrorMessage(message: string): string {
@@ -209,6 +215,7 @@ class API {
   private mapUser(raw: any, prev?: User | null): User {
     return {
       id: String(raw.id),
+      publicId: String(raw.public_id || raw.publicId || raw.id || ""),
       email: raw.email,
       name: raw.name,
       role: raw.role,
@@ -221,6 +228,7 @@ class API {
   }
 
   private mapCourse(raw: any): Course {
+    const enrolledStudentsRaw = raw.enrolledStudents ?? raw.enrolled_students;
     const modules: Module[] = Array.isArray(raw.modules)
       ? raw.modules.map((m: any) => ({
           id: String(m.id),
@@ -266,14 +274,16 @@ class API {
 
     return {
       id: String(raw.id),
+      publicId: String(raw.public_id || raw.publicId || raw.id || ""),
       title: raw.title,
       description: raw.description,
       imageUrl: raw.imageUrl || '',
       teacherId: String(raw.teacher_id),
+      teacherPublicId: raw.teacher_public_id ? String(raw.teacher_public_id) : undefined,
       teacherName: raw.teacher_name || raw.teacherName || `Преподаватель #${raw.teacher_id}`,
       createdAt: raw.createdAt || new Date().toISOString(),
       modules,
-      enrolledStudents: Array.isArray(raw.enrolledStudents) ? raw.enrolledStudents : [],
+      enrolledStudents: Array.isArray(enrolledStudentsRaw) ? enrolledStudentsRaw.map((id: any) => String(id)) : [],
       status: raw.status,
       hasPassword: Boolean(raw.has_password ?? raw.hasPassword),
     };
@@ -456,11 +466,22 @@ class API {
     return { course: this.mapCourse(course) };
   }
 
+  async searchCourses(query: string, by: "all" | "id" | "title" | "teacher" = "all"): Promise<{ courses: Course[] }> {
+    const params = new URLSearchParams();
+    if (query.trim()) {
+      params.set("query", query.trim());
+    }
+    params.set("by", by);
+    const rows = await this.request(`/courses/search?${params.toString()}`);
+    return { courses: (rows || []).map((c: any) => this.mapCourse(c)) };
+  }
+
   async getTeacherPublicProfile(teacherId: string): Promise<TeacherPublicProfile> {
     const data = await this.request(`/teachers/${teacherId}/profile`);
     return {
       teacher: {
         id: String(data.teacher?.id || teacherId),
+        publicId: String(data.teacher?.public_id || data.teacher?.publicId || data.teacher?.id || teacherId),
         name: String(data.teacher?.name || "Преподаватель"),
         email: String(data.teacher?.email || ""),
         avatarUrl: data.teacher?.avatar_url || "",
@@ -797,6 +818,11 @@ class API {
     return { submissions: (rows || []).map((row: any) => this.mapLessonSubmission(row)) };
   }
 
+  async getTeacherCourseStudents(courseId: string): Promise<{ students: User[] }> {
+    const rows = await this.request(`/teacher/courses/${courseId}/students`);
+    return { students: (rows || []).map((row: any) => this.mapUser(row, null)) };
+  }
+
   async reviewLessonSubmission(
     courseId: string,
     submissionId: string,
@@ -840,6 +866,19 @@ class API {
   async getAllUsers() {
     const users = await this.request('/admin/users');
     return { users: (users || []).map((u: any) => this.mapUser(u, null)) };
+  }
+
+  async createUserAsAdmin(payload: { name: string; email: string; password: string; role: "student" | "teacher" | "admin" }) {
+    const user = await this.request('/admin/users', {
+      method: "POST",
+      body: JSON.stringify({
+        name: payload.name,
+        email: payload.email,
+        password: payload.password,
+        role: payload.role,
+      }),
+    });
+    return { success: true, user: this.mapUser(user, null) };
   }
 
   async getAdminUserDetails(userId: string) {

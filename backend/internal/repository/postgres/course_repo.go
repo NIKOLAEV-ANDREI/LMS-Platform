@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"lms-backend/internal/domain"
+	"strings"
 )
 
 type CourseRepo struct {
@@ -15,21 +16,21 @@ func NewCourseRepo(db *sql.DB) *CourseRepo { return &CourseRepo{db: db} }
 
 func (r *CourseRepo) Create(course *domain.Course) error {
 	return r.db.QueryRow(
-		`INSERT INTO courses(title,description,teacher_id,status) VALUES($1,$2,$3,$4) RETURNING id`,
-		course.Title, course.Description, course.TeacherID, course.Status,
-	).Scan(&course.ID)
+		`INSERT INTO courses(public_id,title,description,teacher_id,status) VALUES($1,$2,$3,$4,$5) RETURNING id,public_id`,
+		course.PublicID, course.Title, course.Description, course.TeacherID, course.Status,
+	).Scan(&course.ID, &course.PublicID)
 }
 
 func (r *CourseRepo) ByID(courseID int64) (*domain.Course, error) {
 	var c domain.Course
 	var accessPasswordHash string
 	err := r.db.QueryRow(
-		`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
+		`SELECT c.id,c.public_id,c.title,c.description,c.teacher_id,COALESCE(u.public_id,''),COALESCE(u.name,''),c.status,c.access_password_hash
 		 FROM courses c
 		 LEFT JOIN users u ON u.id = c.teacher_id
 		 WHERE c.id=$1`,
 		courseID,
-	).Scan(&c.ID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherName, &c.Status, &accessPasswordHash)
+	).Scan(&c.ID, &c.PublicID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherPublicID, &c.TeacherName, &c.Status, &accessPasswordHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -44,11 +45,16 @@ func (r *CourseRepo) ByID(courseID int64) (*domain.Course, error) {
 		return nil, err
 	}
 	c.Modules = modules
+	enrolledStudents, err := r.loadEnrolledStudents(c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.EnrolledStudents = enrolledStudents
 	return &c, nil
 }
 
 func (r *CourseRepo) ListApproved() ([]domain.Course, error) {
-	courses, err := r.listByQuery(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
+	courses, err := r.listByQuery(`SELECT c.id,c.public_id,c.title,c.description,c.teacher_id,COALESCE(u.public_id,''),COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		WHERE c.status='approved' AND c.status <> 'rejected'
@@ -59,8 +65,58 @@ func (r *CourseRepo) ListApproved() ([]domain.Course, error) {
 	return r.enrichCoursesWithModules(courses)
 }
 
+func (r *CourseRepo) SearchApproved(query, searchBy string) ([]domain.Course, error) {
+	query = strings.TrimSpace(query)
+	searchBy = strings.TrimSpace(strings.ToLower(searchBy))
+	if searchBy == "" {
+		searchBy = "all"
+	}
+
+	base := `SELECT c.id,c.public_id,c.title,c.description,c.teacher_id,COALESCE(u.public_id,''),COALESCE(u.name,''),c.status,c.access_password_hash
+		FROM courses c
+		LEFT JOIN users u ON u.id = c.teacher_id
+		WHERE c.status='approved' AND c.status <> 'rejected'`
+
+	args := []any{}
+	conditions := []string{}
+	if query != "" {
+		like := "%" + query + "%"
+		switch searchBy {
+		case "id":
+			conditions = append(conditions, `(CAST(c.id AS TEXT) ILIKE $1 OR c.public_id ILIKE $1)`)
+			args = append(args, like)
+		case "title":
+			conditions = append(conditions, `c.title ILIKE $1`)
+			args = append(args, like)
+		case "teacher":
+			conditions = append(conditions, `u.name ILIKE $1`)
+			args = append(args, like)
+		default:
+			conditions = append(conditions, `(CAST(c.id AS TEXT) ILIKE $1 OR c.public_id ILIKE $1 OR c.title ILIKE $1 OR u.name ILIKE $1)`)
+			args = append(args, like)
+		}
+	}
+
+	sqlQuery := base
+	if len(conditions) > 0 {
+		sqlQuery += " AND " + strings.Join(conditions, " AND ")
+	}
+	sqlQuery += " ORDER BY c.id DESC"
+
+	rows, err := r.db.Query(sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	courses, err := scanCourses(rows)
+	if err != nil {
+		return nil, err
+	}
+	return r.enrichCoursesWithModules(courses)
+}
+
 func (r *CourseRepo) ListByTeacher(teacherID int64) ([]domain.Course, error) {
-	rows, err := r.db.Query(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
+	rows, err := r.db.Query(`SELECT c.id,c.public_id,c.title,c.description,c.teacher_id,COALESCE(u.public_id,''),COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		WHERE c.teacher_id=$1 AND c.status <> 'rejected'
@@ -77,7 +133,7 @@ func (r *CourseRepo) ListByTeacher(teacherID int64) ([]domain.Course, error) {
 }
 
 func (r *CourseRepo) ListDeletedByTeacher(teacherID int64) ([]domain.Course, error) {
-	rows, err := r.db.Query(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
+	rows, err := r.db.Query(`SELECT c.id,c.public_id,c.title,c.description,c.teacher_id,COALESCE(u.public_id,''),COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		WHERE c.teacher_id=$1 AND c.status='rejected'
@@ -94,7 +150,7 @@ func (r *CourseRepo) ListDeletedByTeacher(teacherID int64) ([]domain.Course, err
 }
 
 func (r *CourseRepo) ListAll() ([]domain.Course, error) {
-	courses, err := r.listByQuery(`SELECT c.id,c.title,c.description,c.teacher_id,COALESCE(u.name,''),c.status,c.access_password_hash
+	courses, err := r.listByQuery(`SELECT c.id,c.public_id,c.title,c.description,c.teacher_id,COALESCE(u.public_id,''),COALESCE(u.name,''),c.status,c.access_password_hash
 		FROM courses c
 		LEFT JOIN users u ON u.id = c.teacher_id
 		ORDER BY c.id DESC`)
@@ -216,7 +272,7 @@ func scanCourses(rows *sql.Rows) ([]domain.Course, error) {
 	for rows.Next() {
 		var c domain.Course
 		var accessPasswordHash string
-		if err := rows.Scan(&c.ID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherName, &c.Status, &accessPasswordHash); err != nil {
+		if err := rows.Scan(&c.ID, &c.PublicID, &c.Title, &c.Description, &c.TeacherID, &c.TeacherPublicID, &c.TeacherName, &c.Status, &accessPasswordHash); err != nil {
 			return nil, err
 		}
 		c.AccessPasswordHash = accessPasswordHash
@@ -233,6 +289,12 @@ func (r *CourseRepo) enrichCoursesWithModules(courses []domain.Course) ([]domain
 			return nil, err
 		}
 		courses[i].Modules = modules
+
+		enrolledStudents, err := r.loadEnrolledStudents(courses[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		courses[i].EnrolledStudents = enrolledStudents
 	}
 	return courses, nil
 }
@@ -298,4 +360,22 @@ func (r *CourseRepo) loadLessons(moduleID int64) ([]domain.Lesson, error) {
 		lessons = append(lessons, l)
 	}
 	return lessons, rows.Err()
+}
+
+func (r *CourseRepo) loadEnrolledStudents(courseID int64) ([]int64, error) {
+	rows, err := r.db.Query(`SELECT user_id FROM enrollments WHERE course_id=$1 ORDER BY user_id ASC`, courseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	studentIDs := make([]int64, 0)
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		studentIDs = append(studentIDs, userID)
+	}
+	return studentIDs, rows.Err()
 }

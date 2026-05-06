@@ -8,6 +8,7 @@ import AdminDashboard from "./components/dashboards/AdminDashboard";
 import AdminUserPage from "./components/dashboards/AdminUserPage";
 import Profile from "./components/Profile";
 import CoursePage from "./components/courses/CoursePage";
+import CourseSearchPage from "./components/courses/CourseSearchPage";
 import TeacherReviewsPage from "./components/courses/TeacherReviewsPage";
 import CourseEditor from "./components/courses/CourseEditor";
 import LessonEditor from "./components/courses/LessonEditor";
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
       { path: "admin/courses/:id/edit", Component: CourseEditor },
       { path: "admin/courses/:courseId/lessons/:lessonId/edit", Component: LessonEditor },
       { path: "profile", Component: Profile },
+      { path: "courses/search", Component: CourseSearchPage },
       { path: "courses/:id", Component: CoursePage },
       { path: "teacher/reviews", Component: TeacherReviewsPage },
       { path: "teachers/:id", Component: TeacherPublicProfilePage },

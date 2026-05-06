@@ -2006,3 +2006,291 @@ pm run build - OK.
 - Verified no mojibake markers remain.
 - Validation: 
 pm run check:encoding - OK.
+
+## 103) 2026-05-06 - Admin can create users
+- Backend:
+  - Added endpoint POST /api/admin/users (admin-only) in ackend/internal/handler/http/handler.go.
+  - Added AdminService.CreateUser(name, email, password, role) with validations, email uniqueness check, and password hashing.
+- Frontend:
+  - Added pi.createUserAsAdmin(...) in rontend/src/app/utils/api.ts.
+  - Added "Создать пользователя" button and modal form (name, email, password, role) in rontend/src/app/components/dashboards/AdminDashboard.tsx.
+  - Added client-side limits via pplyTextLimit and minimum password validation before submit.
+- Validation:
+  - go test ./... - OK
+  - 
+pm run check:encoding - OK
+  - 
+pm run build - OK
+
+## 104) 2026-05-06 - Fixed teacher student count on course cards
+- Root cause: backend course payload did not include enrolled student IDs, while frontend cards relied on course.enrolledStudents.length.
+- Backend:
+  - Added enrolled_students to course domain model.
+  - PostgreSQL course repository now loads enrollments per course and fills EnrolledStudents for ByID and list methods via enrichCoursesWithModules.
+- Frontend:
+  - mapCourse now supports both enrolledStudents and enrolled_students payload keys and normalizes IDs to strings.
+- Files:
+  - ackend/internal/domain/models.go
+  - ackend/internal/repository/postgres/course_repo.go
+  - rontend/src/app/utils/api.ts
+- Validation:
+  - go test ./... - OK
+  - 
+pm run build - OK
+  - 
+pm run check:encoding - OK
+
+## 105) 2026-05-06 - Teacher can open enrolled students list from course page
+- Backend:
+  - Added teacher-only endpoint GET /api/teacher/courses/{courseID}/students.
+  - Added enrollment repository method ListCourseStudentsByTeacher(teacherID, courseID) with ownership check.
+  - Added service method CourseService.ListCourseStudentsByTeacher.
+- Frontend:
+  - Added API method pi.getTeacherCourseStudents(courseId).
+  - On CoursePage, for course owner (teacher) added button Список студентов near student counter.
+  - Button opens modal with enrolled students list (name + email mailto link).
+- Files:
+  - ackend/internal/repository/interfaces.go
+  - ackend/internal/repository/postgres/enrollment_repo.go
+  - ackend/internal/repository/sqlite/enrollment_repo.go
+  - ackend/internal/service/course_service.go
+  - ackend/internal/handler/http/handler.go
+  - rontend/src/app/utils/api.ts
+  - rontend/src/app/components/courses/CoursePage.tsx
+- Validation:
+  - go test ./... - OK
+  - 
+pm run build - OK
+  - 
+pm run check:encoding - OK
+
+## 106) 2026-05-06 - Replaced exposed internal user IDs with public IDs
+- Security improvement:
+  - Added public_id for users and switched UI display/navigation to use it instead of internal DB id.
+  - Internal numeric id remains backend-internal for relations and authorization context.
+- Backend:
+  - Domain: User.PublicID, Course.TeacherPublicID.
+  - Migration: added users.public_id, backfilled existing rows, set NOT NULL + unique index.
+  - User repositories (postgres/sqlite): create/select/list now read/write public_id; added ByPublicID lookup.
+  - Services: user creation (register/admin create) now generates cryptographically random public IDs.
+  - Handlers: admin user routes and teacher profile resolve user by either numeric ID or public_id (esolveUserID helper).
+  - Teacher profile payload now includes 	eacher.public_id.
+  - Course queries now include 	eacher_public_id in payload.
+- Frontend:
+  - User model now includes publicId; Course includes optional 	eacherPublicId.
+  - API mapper supports public_id and 	eacher_public_id.
+  - Profile pages now show Публичный ID instead of DB id.
+  - Admin dashboard row navigation/actions use publicId in URLs/requests.
+  - Course page teacher profile link now uses 	eacherPublicId (fallback to old id for compatibility).
+- Validation:
+  - go test ./... - OK
+  - 
+pm run check:encoding - OK
+  - 
+pm run build - OK
+
+## 107) 2026-05-06 - Prevent admin from changing own role
+- Backend hard protection:
+  - In changeRole handler, added guard: if target user equals current authenticated admin, return 403 with cannot change own role.
+- Frontend UX protection:
+  - Admin dashboard now loads current session user id.
+  - Role select is disabled on current admin row.
+  - Added helper text: Свою роль менять нельзя.
+  - Added client guard to block accidental self-role change attempt before request.
+- Localization:
+  - Added error translation for cannot change own role -> Свою роль менять нельзя.
+- Files:
+  - ackend/internal/handler/http/handler.go
+  - rontend/src/app/components/dashboards/AdminDashboard.tsx
+  - rontend/src/app/utils/api.ts
+- Validation:
+  - go test ./... - OK
+  - 
+pm run check:encoding - OK
+  - 
+pm run build - OK
+
+## 108) 2026-05-06 - Dedicated course search page for student/teacher
+- Added dedicated search page accessible from top navigation for student and 	eacher:
+  - route: /courses/search
+  - nav button label: Поиск курсов
+- Backend:
+  - Added endpoint GET /api/courses/search?query=...&by=all|id|title|teacher.
+  - Added service method SearchPublicCourses(query, searchBy) with filter validation.
+  - Added repository method SearchApproved(query, searchBy) in PostgreSQL with SQL filtering by:
+    - id (CAST id to text),
+    - 	itle,
+    - 	eacher (teacher name),
+    - ll (OR across all fields).
+  - SQLite repo method stub added for interface compatibility.
+- Frontend:
+  - Added page component CourseSearchPage with:
+    - text query input,
+    - search field selector,
+    - search button,
+    - result cards and actions by role (student: preview/enroll/open; teacher: open).
+  - Added API method pi.searchCourses(query, by).
+  - Added localization for backend validation error invalid search filter.
+- Files:
+  - ackend/internal/repository/interfaces.go
+  - ackend/internal/repository/postgres/course_repo.go
+  - ackend/internal/repository/sqlite/course_repo.go
+  - ackend/internal/service/course_service.go
+  - ackend/internal/handler/http/handler.go
+  - rontend/src/app/components/courses/CourseSearchPage.tsx
+  - rontend/src/app/components/Layout.tsx
+  - rontend/src/app/routes.tsx
+  - rontend/src/app/utils/api.ts
+- Validation:
+  - go test ./... - OK
+  - 
+pm run check:encoding - OK
+  - 
+pm run build - OK
+
+## 109) 2026-05-06 - Dynamic course search + aligned search button
+- Updated CourseSearchPage:
+  - Added dynamic auto-search with debounce (~350ms) on query/filter changes.
+  - Initial search now triggers automatically after session init.
+  - Manual Найти submit still works for immediate search.
+- UI polish:
+  - Search button column aligned to the same visual row as input/select.
+  - Button now has fixed control height (h-9) and full width in its column.
+- File:
+  - rontend/src/app/components/courses/CourseSearchPage.tsx
+- Validation:
+  - 
+pm run check:encoding - OK
+  - 
+pm run build - OK
+
+## 110) 2026-05-06 - Course public IDs + UI display
+- Added `public_id` for courses (similar to users) and made it auto-generated on course creation.
+- Backend changes:
+  - Domain: `Course` now includes `public_id`.
+  - Migration:
+    - added `courses.public_id` column,
+    - backfilled existing rows,
+    - set NOT NULL,
+    - added unique index `courses_public_id_idx`.
+  - Service: `CreateByTeacher` now generates public id before saving.
+  - PostgreSQL repo:
+    - create now inserts/returns `public_id`,
+    - all course select scans now include `public_id`,
+    - search by `id` now matches both numeric id and `public_id`.
+  - SQLite repo compatibility updated to include `public_id` in create/select scans.
+- Frontend changes:
+  - API `Course` model now includes `publicId` mapped from backend `public_id`.
+  - Displayed course ID (`ID: {publicId}`) in key course cards/pages:
+    - student dashboard,
+    - teacher dashboard,
+    - profile course cards,
+    - course search cards,
+    - teacher public profile course cards,
+    - course page header,
+    - admin user page course blocks.
+- Files:
+  - backend/internal/domain/models.go
+  - backend/internal/db/migrate.go
+  - backend/internal/service/course_service.go
+  - backend/internal/repository/postgres/course_repo.go
+  - backend/internal/repository/sqlite/course_repo.go
+  - frontend/src/app/utils/api.ts
+  - frontend/src/app/components/dashboards/StudentDashboard.tsx
+  - frontend/src/app/components/dashboards/TeacherDashboard.tsx
+  - frontend/src/app/components/Profile.tsx
+  - frontend/src/app/components/courses/CoursePage.tsx
+  - frontend/src/app/components/courses/CourseSearchPage.tsx
+  - frontend/src/app/components/teachers/TeacherPublicProfilePage.tsx
+  - frontend/src/app/components/dashboards/AdminUserPage.tsx
+- Validation:
+  - backend: `go test ./...` - OK
+  - backend: `go build ./...` - OK
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK
+
+## 111) 2026-05-06 - Removed course ID from course cards
+- Removed visual `ID: ...` line from course cards across UI while keeping backend `public_id` support unchanged.
+- Updated components:
+  - frontend/src/app/components/dashboards/StudentDashboard.tsx
+  - frontend/src/app/components/dashboards/TeacherDashboard.tsx
+  - frontend/src/app/components/Profile.tsx
+  - frontend/src/app/components/courses/CourseSearchPage.tsx
+  - frontend/src/app/components/teachers/TeacherPublicProfilePage.tsx
+  - frontend/src/app/components/dashboards/AdminUserPage.tsx
+- Validation:
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK
+
+## 112) 2026-05-06 - Course cards top-half blue background
+- Updated course card visuals to match request:
+  - top half of each course card now uses Telegram accent blue `#27A5E7`,
+  - bottom half remains white,
+  - effect implemented via linear-gradient background.
+- Applied across course-card areas:
+  - student dashboard cards,
+  - teacher dashboard cards,
+  - student/teacher profile course cards,
+  - course search result cards,
+  - teacher public profile course cards.
+- Added `overflow-hidden` to course cards for clean split edges.
+- Updated header text on course cards to white for contrast on blue top area.
+- Validation:
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK
+- Files:
+  - frontend/src/app/components/dashboards/StudentDashboard.tsx
+  - frontend/src/app/components/dashboards/TeacherDashboard.tsx
+  - frontend/src/app/components/Profile.tsx
+  - frontend/src/app/components/courses/CourseSearchPage.tsx
+  - frontend/src/app/components/teachers/TeacherPublicProfilePage.tsx
+
+## 113) 2026-05-06 - Course cards: blue header only (no gradient bleed)
+- Reworked course card background style per UX feedback:
+  - removed half-card gradient background,
+  - applied Telegram blue `#27A5E7` only to `CardHeader`,
+  - left `CardContent` white.
+- Kept white header text and `overflow-hidden` for clean rounded corners.
+- Applied across course-card views:
+  - student dashboard,
+  - teacher dashboard,
+  - profile course cards (student + teacher),
+  - course search cards,
+  - teacher public profile cards.
+- Files:
+  - frontend/src/app/components/dashboards/StudentDashboard.tsx
+  - frontend/src/app/components/dashboards/TeacherDashboard.tsx
+  - frontend/src/app/components/Profile.tsx
+  - frontend/src/app/components/courses/CourseSearchPage.tsx
+  - frontend/src/app/components/teachers/TeacherPublicProfilePage.tsx
+- Validation:
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK
+
+## 114) 2026-05-06 - Course card header icons contrast improvements
+- Added shared icon styles for course-card blue headers:
+  - `.course-header-icon-button` for normal header actions (white icon + subtle white translucent background).
+  - `.course-header-icon-button-danger` for destructive actions on hover (red background + white icon).
+- Applied new classes to header action icons on course cards:
+  - teacher dashboard course cards (lock/unlock, delete),
+  - profile course cards (student unenroll icon, teacher lock/unlock and delete).
+- Goal: avoid blue-on-blue icon blending and keep visual consistency.
+- Files:
+  - frontend/src/styles/theme.css
+  - frontend/src/app/components/dashboards/TeacherDashboard.tsx
+  - frontend/src/app/components/Profile.tsx
+- Validation:
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK
+
+## 115) 2026-05-06 - Teacher status badge contrast + UTF-8 recovery
+- Fixed mojibake regression in:
+  - `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+  - `frontend/src/app/components/Profile.tsx`
+- Improved teacher course status badges on blue card header:
+  - `Опубликован`: white badge with blue text,
+  - `Черновик`: dark translucent badge with white text.
+- Kept blue `CardHeader` and header icon contrast classes for teacher cards so status and actions are readable.
+- Validation:
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK

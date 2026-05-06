@@ -14,12 +14,13 @@ func NewUserRepo(db *sql.DB) *UserRepo { return &UserRepo{db: db} }
 
 func (r *UserRepo) Create(user *domain.User) error {
 	res, err := r.db.Exec(
-		`INSERT INTO users(name,email,password_hash,role,blocked,avatar_url) VALUES(?,?,?,?,0,?)`,
+		`INSERT INTO users(name,email,password_hash,role,blocked,avatar_url,public_id) VALUES(?,?,?,?,0,?,?)`,
 		user.Name,
 		user.Email,
 		user.PasswordHash,
 		user.Role,
 		user.AvatarURL,
+		user.PublicID,
 	)
 	if err != nil {
 		return err
@@ -35,8 +36,8 @@ func (r *UserRepo) Create(user *domain.User) error {
 func (r *UserRepo) ByEmail(email string) (*domain.User, error) {
 	var u domain.User
 	var blocked int
-	err := r.db.QueryRow(`SELECT id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE email = ?`, email).
-		Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL)
+	err := r.db.QueryRow(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE email = ?`, email).
+		Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -50,8 +51,23 @@ func (r *UserRepo) ByEmail(email string) (*domain.User, error) {
 func (r *UserRepo) ByID(id int64) (*domain.User, error) {
 	var u domain.User
 	var blocked int
-	err := r.db.QueryRow(`SELECT id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE id = ?`, id).
-		Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL)
+	err := r.db.QueryRow(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE id = ?`, id).
+		Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	u.Blocked = blocked == 1
+	return &u, nil
+}
+
+func (r *UserRepo) ByPublicID(publicID string) (*domain.User, error) {
+	var u domain.User
+	var blocked int
+	err := r.db.QueryRow(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users WHERE public_id = ?`, publicID).
+		Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -63,7 +79,7 @@ func (r *UserRepo) ByID(id int64) (*domain.User, error) {
 }
 
 func (r *UserRepo) List() ([]domain.User, error) {
-	rows, err := r.db.Query(`SELECT id,name,email,password_hash,role,blocked,avatar_url FROM users ORDER BY id DESC`)
+	rows, err := r.db.Query(`SELECT id,public_id,name,email,password_hash,role,blocked,avatar_url FROM users ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +89,7 @@ func (r *UserRepo) List() ([]domain.User, error) {
 	for rows.Next() {
 		var u domain.User
 		var blocked int
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL); err != nil {
+		if err := rows.Scan(&u.ID, &u.PublicID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &blocked, &u.AvatarURL); err != nil {
 			return nil, err
 		}
 		u.Blocked = blocked == 1

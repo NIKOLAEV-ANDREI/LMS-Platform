@@ -38,6 +38,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.Patch("/me", h.updateMe)
 			p.Get("/dashboard", h.dashboard)
 			p.Get("/courses", h.listCourses)
+			p.Get("/courses/search", h.searchCourses)
 			p.Get("/courses/{courseID}", h.courseByID)
 			p.Get("/teachers/{teacherID}/profile", h.teacherPublicProfile)
 			p.Post("/courses/{courseID}/enroll", h.enroll)
@@ -63,10 +64,12 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Post("/teacher/courses/{courseID}/modules/{moduleID}/lessons", h.addLesson)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.updateLesson)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Delete("/teacher/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.deleteLesson)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/students", h.teacherCourseStudents)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/submissions", h.teacherCourseSubmissions)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}/submissions/{submissionID}", h.reviewLessonSubmission)
 
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/users", h.listUsers)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/users", h.createUserByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/users/{id}", h.userDetails)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/users/{id}", h.updateUserProfile)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/users/{id}/restore", h.restoreUser)
@@ -328,6 +331,18 @@ func (h *Handler) listCourses(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, courses)
 }
 
+func (h *Handler) searchCourses(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	searchBy := strings.TrimSpace(r.URL.Query().Get("by"))
+
+	courses, err := h.course.SearchPublicCourses(query, searchBy)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, courses)
+}
+
 func (h *Handler) courseByID(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserIDFromContext(r.Context())
 	role := middleware.RoleFromContext(r.Context())
@@ -353,7 +368,7 @@ func (h *Handler) courseByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) teacherPublicProfile(w http.ResponseWriter, r *http.Request) {
-	teacherID, err := strconv.ParseInt(chi.URLParam(r, "teacherID"), 10, 64)
+	teacherID, err := h.resolveUserID(r, "teacherID")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
 		return
@@ -382,6 +397,7 @@ func (h *Handler) teacherPublicProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"teacher": map[string]any{
 			"id":         teacher.ID,
+			"public_id":  teacher.PublicID,
 			"name":       teacher.Name,
 			"email":      teacher.Email,
 			"avatar_url": teacher.AvatarURL,
@@ -611,8 +627,28 @@ func (h *Handler) listUsers(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
+func (h *Handler) createUserByAdmin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string      `json:"name"`
+		Email    string      `json:"email"`
+		Password string      `json:"password"`
+		Role     domain.Role `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	user, err := h.admin.CreateUser(req.Name, req.Email, req.Password, req.Role)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, user)
+}
+
 func (h *Handler) userDetails(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := h.resolveUserID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
 		return
@@ -654,7 +690,7 @@ func (h *Handler) userDetails(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateUserProfile(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := h.resolveUserID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
 		return
@@ -683,7 +719,7 @@ func (h *Handler) updateUserProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) restoreUser(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := h.resolveUserID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
 		return
@@ -696,7 +732,7 @@ func (h *Handler) restoreUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) blockUser(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := h.resolveUserID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
 		return
@@ -716,9 +752,14 @@ func (h *Handler) blockUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) changeRole(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := h.resolveUserID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+	currentUserID := middleware.UserIDFromContext(r.Context())
+	if id == currentUserID {
+		writeErr(w, http.StatusForbidden, "cannot change own role")
 		return
 	}
 	var req struct {
@@ -936,13 +977,13 @@ func (h *Handler) addLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title       string                    `json:"title"`
-		Content     string                    `json:"content"`
-		Type        string                    `json:"type"`
-		VideoURL    string                    `json:"videoUrl"`
-		RequiresReview bool                   `json:"requiresReview"`
-		Attachments []domain.LessonAttachment `json:"attachments"`
-		Test        *domain.LessonTest        `json:"test"`
+		Title          string                    `json:"title"`
+		Content        string                    `json:"content"`
+		Type           string                    `json:"type"`
+		VideoURL       string                    `json:"videoUrl"`
+		RequiresReview bool                      `json:"requiresReview"`
+		Attachments    []domain.LessonAttachment `json:"attachments"`
+		Test           *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -1023,13 +1064,13 @@ func (h *Handler) updateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title       string                    `json:"title"`
-		Content     string                    `json:"content"`
-		Type        string                    `json:"type"`
-		VideoURL    string                    `json:"videoUrl"`
-		RequiresReview bool                   `json:"requiresReview"`
-		Attachments []domain.LessonAttachment `json:"attachments"`
-		Test        *domain.LessonTest        `json:"test"`
+		Title          string                    `json:"title"`
+		Content        string                    `json:"content"`
+		Type           string                    `json:"type"`
+		VideoURL       string                    `json:"videoUrl"`
+		RequiresReview bool                      `json:"requiresReview"`
+		Attachments    []domain.LessonAttachment `json:"attachments"`
+		Test           *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -1066,6 +1107,22 @@ func (h *Handler) deleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *Handler) teacherCourseStudents(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+
+	students, err := h.course.ListCourseStudentsByTeacher(teacherID, courseID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, students)
 }
 
 func (h *Handler) addModuleByAdmin(w http.ResponseWriter, r *http.Request) {
@@ -1147,13 +1204,13 @@ func (h *Handler) addLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title       string                    `json:"title"`
-		Content     string                    `json:"content"`
-		Type        string                    `json:"type"`
-		VideoURL    string                    `json:"videoUrl"`
-		RequiresReview bool                   `json:"requiresReview"`
-		Attachments []domain.LessonAttachment `json:"attachments"`
-		Test        *domain.LessonTest        `json:"test"`
+		Title          string                    `json:"title"`
+		Content        string                    `json:"content"`
+		Type           string                    `json:"type"`
+		VideoURL       string                    `json:"videoUrl"`
+		RequiresReview bool                      `json:"requiresReview"`
+		Attachments    []domain.LessonAttachment `json:"attachments"`
+		Test           *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -1184,13 +1241,13 @@ func (h *Handler) updateLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title       string                    `json:"title"`
-		Content     string                    `json:"content"`
-		Type        string                    `json:"type"`
-		VideoURL    string                    `json:"videoUrl"`
-		RequiresReview bool                   `json:"requiresReview"`
-		Attachments []domain.LessonAttachment `json:"attachments"`
-		Test        *domain.LessonTest        `json:"test"`
+		Title          string                    `json:"title"`
+		Content        string                    `json:"content"`
+		Type           string                    `json:"type"`
+		VideoURL       string                    `json:"videoUrl"`
+		RequiresReview bool                      `json:"requiresReview"`
+		Attachments    []domain.LessonAttachment `json:"attachments"`
+		Test           *domain.LessonTest        `json:"test"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
@@ -1225,6 +1282,24 @@ func (h *Handler) deleteLessonByAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *Handler) resolveUserID(r *http.Request, param string) (int64, error) {
+	raw := strings.TrimSpace(chi.URLParam(r, param))
+	if raw == "" {
+		return 0, strconv.ErrSyntax
+	}
+	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return id, nil
+	}
+	user, err := h.admin.UserByPublicID(raw)
+	if err != nil {
+		return 0, err
+	}
+	if user == nil {
+		return 0, strconv.ErrSyntax
+	}
+	return user.ID, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, payload any) {

@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { api, User } from "../utils/api";
-import { GraduationCap, Home, User as UserIcon, LogOut, Users, FileCheck2 } from "lucide-react";
+import { GraduationCap, Home, Search, User as UserIcon, LogOut, Users, FileCheck2 } from "lucide-react";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -80,6 +80,19 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
                   >
                     <Home className="h-4 w-4" />
                     Главная
+                  </Button>
+                </Link>
+              )}
+
+              {(user.role === 'student' || user.role === 'teacher') && (
+                <Link to="/courses/search">
+                  <Button
+                    variant={location.pathname === '/courses/search' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <Search className="h-4 w-4" />
+                    Поиск курсов
                   </Button>
                 </Link>
               )}

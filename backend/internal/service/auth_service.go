@@ -46,7 +46,11 @@ func (s *AuthService) Register(name, email, password string, role domain.Role) (
 	if err != nil {
 		return nil, err
 	}
-	user := &domain.User{Name: name, Email: email, PasswordHash: string(hash), Role: role}
+	publicID, err := generatePublicID()
+	if err != nil {
+		return nil, err
+	}
+	user := &domain.User{Name: name, Email: email, PasswordHash: string(hash), Role: role, PublicID: publicID}
 	if err := s.users.Create(user); err != nil {
 		return nil, err
 	}

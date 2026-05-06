@@ -62,6 +62,41 @@ func (r *EnrollmentRepo) ListByStudent(userID int64) ([]domain.Enrollment, error
 	return out, rows.Err()
 }
 
+func (r *EnrollmentRepo) ListCourseStudentsByTeacher(teacherID, courseID int64) ([]domain.User, error) {
+	var courseTeacherID int64
+	if err := r.db.QueryRow(`SELECT teacher_id FROM courses WHERE id=$1`, courseID).Scan(&courseTeacherID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("course not found")
+		}
+		return nil, err
+	}
+	if courseTeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+
+	rows, err := r.db.Query(`
+		SELECT u.id, u.name, u.email, u.role, u.blocked, u.avatar_url
+		FROM enrollments e
+		JOIN users u ON u.id = e.user_id
+		WHERE e.course_id=$1
+		ORDER BY u.name ASC, u.id ASC
+	`, courseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	students := make([]domain.User, 0, 16)
+	for rows.Next() {
+		var user domain.User
+		if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.Blocked, &user.AvatarURL); err != nil {
+			return nil, err
+		}
+		students = append(students, user)
+	}
+	return students, rows.Err()
+}
+
 func (r *EnrollmentRepo) CompleteLesson(userID, courseID, lessonID int64) (*domain.CourseProgress, error) {
 	var enrolled bool
 	if err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM enrollments WHERE user_id=$1 AND course_id=$2)`, userID, courseID).Scan(&enrolled); err != nil {

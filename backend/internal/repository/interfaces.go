@@ -6,6 +6,7 @@ type UserRepository interface {
 	Create(user *domain.User) error
 	ByEmail(email string) (*domain.User, error)
 	ByID(id int64) (*domain.User, error)
+	ByPublicID(publicID string) (*domain.User, error)
 	List() ([]domain.User, error)
 	SetBlocked(id int64, blocked bool) error
 	SetRole(id int64, role domain.Role) error
@@ -18,6 +19,7 @@ type CourseRepository interface {
 	Create(course *domain.Course) error
 	ByID(courseID int64) (*domain.Course, error)
 	ListApproved() ([]domain.Course, error)
+	SearchApproved(query, searchBy string) ([]domain.Course, error)
 	ListByTeacher(teacherID int64) ([]domain.Course, error)
 	ListDeletedByTeacher(teacherID int64) ([]domain.Course, error)
 	ListAll() ([]domain.Course, error)
@@ -40,6 +42,7 @@ type EnrollmentRepository interface {
 	Unenroll(userID, courseID int64) error
 	SetProgress(userID, courseID int64, progress int) error
 	ListByStudent(userID int64) ([]domain.Enrollment, error)
+	ListCourseStudentsByTeacher(teacherID, courseID int64) ([]domain.User, error)
 	CompleteLesson(userID, courseID, lessonID int64) (*domain.CourseProgress, error)
 	GetCourseProgress(userID, courseID int64) (*domain.CourseProgress, error)
 	SubmitLessonWork(studentID, courseID, lessonID int64, fileName, fileURL, studentNote string) (*domain.LessonSubmission, error)

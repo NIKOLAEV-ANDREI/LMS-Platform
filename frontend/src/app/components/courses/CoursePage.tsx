@@ -7,6 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "..
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Progress } from "../ui/progress";
 import { api, Course, LessonSubmission, Progress as CourseProgress, User } from "../../utils/api";
@@ -31,6 +32,9 @@ export default function CoursePage() {
   const [coursePassword, setCoursePassword] = useState("");
   const [checkingPassword, setCheckingPassword] = useState(false);
   const [studentSubmissions, setStudentSubmissions] = useState<Record<string, LessonSubmission>>({});
+  const [studentsDialogOpen, setStudentsDialogOpen] = useState(false);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [enrolledStudentUsers, setEnrolledStudentUsers] = useState<User[]>([]);
 
   const moduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const openFromStateApplied = useRef(false);
@@ -147,6 +151,19 @@ export default function CoursePage() {
     return <Badge variant="destructive">Отклонено</Badge>;
   };
 
+  const loadTeacherCourseStudents = async () => {
+    if (!course || !isTeacherOwner) return;
+    setStudentsLoading(true);
+    try {
+      const { students } = await api.getTeacherCourseStudents(course.id);
+      setEnrolledStudentUsers(students);
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка загрузки списка студентов");
+    } finally {
+      setStudentsLoading(false);
+    }
+  };
+
   const handleBack = () => {
     if (window.history.length > 1) {
       navigate(-1);
@@ -251,6 +268,7 @@ export default function CoursePage() {
         <div className="min-w-0 space-y-2">
           <h1 className="break-words text-4xl font-bold [overflow-wrap:anywhere]">{course.title}</h1>
           <p className="break-words text-lg text-muted-foreground [overflow-wrap:anywhere]">{course.description}</p>
+          <p className="text-sm text-muted-foreground">ID: {course.publicId}</p>
 
           <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -264,13 +282,54 @@ export default function CoursePage() {
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               <span>{formatRuCount(course.enrolledStudents.length, "студент", "студента", "студентов")}</span>
+              {isTeacherOwner && (
+                <Dialog
+                  open={studentsDialogOpen}
+                  onOpenChange={(open) => {
+                    setStudentsDialogOpen(open);
+                    if (open) {
+                      void loadTeacherCourseStudents();
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs">
+                      Список студентов
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Студенты курса</DialogTitle>
+                      <DialogDescription>
+                        Записанные студенты курса "{course.title}"
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
+                      {studentsLoading ? (
+                        <div className="py-6 text-sm text-muted-foreground">Загрузка списка...</div>
+                      ) : enrolledStudentUsers.length === 0 ? (
+                        <div className="py-6 text-sm text-muted-foreground">На курс пока никто не записан.</div>
+                      ) : (
+                        enrolledStudentUsers.map((student) => (
+                          <div key={student.id} className="rounded-md border p-3">
+                            <p className="font-medium">{student.name}</p>
+                            <a href={`mailto:${student.email}`} className="text-sm text-primary hover:underline">
+                              {student.email}
+                            </a>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
             </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">Преподаватель:</span>
             <span className="font-medium break-words [overflow-wrap:anywhere]">{course.teacherName}</span>
-            <Link to={`/teachers/${course.teacherId}`}>
+            <Link to={`/teachers/${course.teacherPublicId || course.teacherId}`}>
               <Button type="button" variant="outline" size="sm">
                 Профиль
               </Button>

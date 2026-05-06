@@ -14,6 +14,12 @@ func Migrate(db *sql.DB) error {
 			avatar_url TEXT NOT NULL DEFAULT ''
 		);`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS public_id TEXT;`,
+		`UPDATE users
+		 SET public_id = md5(random()::text || clock_timestamp()::text || id::text)
+		 WHERE public_id IS NULL OR public_id = '';`,
+		`ALTER TABLE users ALTER COLUMN public_id SET NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS users_public_id_idx ON users(public_id);`,
 		`CREATE TABLE IF NOT EXISTS courses (
 			id BIGSERIAL PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -23,6 +29,12 @@ func Migrate(db *sql.DB) error {
 			access_password_hash TEXT NOT NULL DEFAULT ''
 		);`,
 		`ALTER TABLE courses ADD COLUMN IF NOT EXISTS access_password_hash TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE courses ADD COLUMN IF NOT EXISTS public_id TEXT;`,
+		`UPDATE courses
+		 SET public_id = md5(random()::text || clock_timestamp()::text || id::text)
+		 WHERE public_id IS NULL OR public_id = '';`,
+		`ALTER TABLE courses ALTER COLUMN public_id SET NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS courses_public_id_idx ON courses(public_id);`,
 		`CREATE TABLE IF NOT EXISTS enrollments (
 			user_id BIGINT NOT NULL REFERENCES users(id),
 			course_id BIGINT NOT NULL REFERENCES courses(id),
