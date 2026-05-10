@@ -42,6 +42,9 @@ export default function TeacherDashboard() {
   const [pendingReviewItems, setPendingReviewItems] = useState<PendingReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [passwordDialogCourse, setPasswordDialogCourse] = useState<Course | null>(null);
+  const [coursePasswordInput, setCoursePasswordInput] = useState("");
+  const [savingCoursePassword, setSavingCoursePassword] = useState(false);
   const [newCourse, setNewCourse] = useState({
     title: "",
     description: "",
@@ -197,6 +200,8 @@ export default function TeacherDashboard() {
   };
 
   const handleToggleCoursePassword = async (course: Course) => {
+    if (savingCoursePassword) return;
+
     if (course.hasPassword) {
       if (!window.confirm(`Снять пароль с курса "${course.title}"?`)) return;
       try {
@@ -209,9 +214,14 @@ export default function TeacherDashboard() {
       return;
     }
 
-    const password = window.prompt("Введите пароль для курса (от 4 до 10 символов):", "");
-    if (password === null) return;
-    const normalized = password.trim();
+    setCoursePasswordInput("");
+    setPasswordDialogCourse(course);
+  };
+
+  const handleSetCoursePassword = async () => {
+    if (!passwordDialogCourse || savingCoursePassword) return;
+
+    const normalized = coursePasswordInput.trim();
     if (!normalized) {
       toast.error("Введите пароль курса");
       return;
@@ -224,12 +234,18 @@ export default function TeacherDashboard() {
       toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
       return;
     }
+
+    setSavingCoursePassword(true);
     try {
-      await api.setCoursePassword(course.id, normalized);
+      await api.setCoursePassword(passwordDialogCourse.id, normalized);
       toast.success("Пароль курса установлен");
+      setPasswordDialogCourse(null);
+      setCoursePasswordInput("");
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка установки пароля курса");
+    } finally {
+      setSavingCoursePassword(false);
     }
   };
 
@@ -256,6 +272,44 @@ export default function TeacherDashboard() {
   return (
     <Layout>
       <div className="space-y-6">
+        <Dialog
+          open={Boolean(passwordDialogCourse)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPasswordDialogCourse(null);
+              setCoursePasswordInput("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Установить пароль курса</DialogTitle>
+              <DialogDescription>
+                {passwordDialogCourse ? `Курс: ${passwordDialogCourse.title}` : "Введите пароль от 4 до 10 символов."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="teacher-course-password">Пароль курса</Label>
+                <Input
+                  id="teacher-course-password"
+                  type="password"
+                  value={coursePasswordInput}
+                  placeholder={`От ${LIMITS.courseAccessPasswordMin} до ${LIMITS.courseAccessPassword} символов`}
+                  onChange={(event) =>
+                    setCoursePasswordInput(
+                      applyTextLimit(event.target.value, LIMITS.courseAccessPassword, "Пароль курса"),
+                    )
+                  }
+                />
+              </div>
+              <Button onClick={handleSetCoursePassword} className="w-full" disabled={savingCoursePassword}>
+                {savingCoursePassword ? "Сохранение..." : "Установить пароль"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="break-words text-3xl font-bold [overflow-wrap:anywhere]">Добро пожаловать, {user?.name}!</h1>

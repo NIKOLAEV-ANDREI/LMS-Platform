@@ -2294,3 +2294,32 @@ pm run build - OK
 - Validation:
   - frontend: `npm run check:encoding` - OK
   - frontend: `npm run build` - OK
+
+## 116) 2026-05-10 - Registration guard, public IDs, student cards, centered password dialogs
+- Backend:
+  - Registration now requires `teacher_access_password` for teacher role.
+  - Teacher registration password is validated in service layer (`0000`).
+  - Fixed teacher course students query to return `users.public_id` in payload.
+- Frontend:
+  - Register page: when role `teacher` is selected, extra field appears for teacher access password.
+  - API signup now sends `teacher_access_password`.
+  - Added Russian translation for backend error `invalid teacher registration password`.
+  - Student course cards in profile now use blue header style (`#27A5E7`) with readable white text.
+  - Replaced `window.prompt` with centered modal dialogs for setting course password in:
+    - `TeacherDashboard`
+    - `Profile` (teacher courses section)
+    - `AdminUserPage`
+  - Profile now displays public user id (`user.publicId`) instead of internal id.
+- Files:
+  - `backend/internal/service/auth_service.go`
+  - `backend/internal/handler/http/handler.go`
+  - `backend/internal/repository/postgres/enrollment_repo.go`
+  - `frontend/src/app/components/auth/Register.tsx`
+  - `frontend/src/app/utils/api.ts`
+  - `frontend/src/app/components/Profile.tsx`
+  - `frontend/src/app/components/dashboards/TeacherDashboard.tsx`
+  - `frontend/src/app/components/dashboards/AdminUserPage.tsx`
+- Validation:
+  - backend: `go test ./...` - OK
+  - frontend: `npm run check:encoding` - OK
+  - frontend: `npm run build` - OK

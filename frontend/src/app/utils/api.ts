@@ -135,6 +135,7 @@ class API {
     { test: /email already exists/i, value: 'Пользователь с таким email уже существует' },
     { test: /user already exists/i, value: 'Пользователь с таким email уже существует' },
     { test: /public registration allows only student or teacher/i, value: 'При открытой регистрации доступны только роли студент и преподаватель' },
+    { test: /invalid teacher registration password/i, value: 'Неверный пароль-разрешение для регистрации преподавателя' },
     { test: /invalid role/i, value: 'Некорректная роль пользователя' },
     { test: /user not found/i, value: 'Пользователь не найден' },
     { test: /course not found/i, value: 'Курс не найден' },
@@ -398,10 +399,22 @@ class API {
     return baseUser;
   }
 
-  async signup(email: string, password: string, name: string, role: 'student' | 'teacher') {
+  async signup(
+    email: string,
+    password: string,
+    name: string,
+    role: 'student' | 'teacher',
+    teacherAccessPassword?: string,
+  ) {
     const user = await this.request('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name, role }),
+      body: JSON.stringify({
+        email,
+        password,
+        name,
+        role,
+        teacher_access_password: teacherAccessPassword || "",
+      }),
     });
     return { success: true, user: this.mapUser(user, null) };
   }

@@ -11,10 +11,12 @@ import { Label } from "../ui/label";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 
 export default function Register() {
+  const TEACHER_ACCESS_PASSWORD = "0000";
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [teacherAccessPassword, setTeacherAccessPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher">("student");
   const [loading, setLoading] = useState(false);
 
@@ -24,10 +26,14 @@ export default function Register() {
       toast.error(`Пароль должен содержать минимум ${LIMITS.passwordMin} символов`);
       return;
     }
+    if (role === "teacher" && teacherAccessPassword.trim() !== TEACHER_ACCESS_PASSWORD) {
+      toast.error("Неверный пароль-разрешение для регистрации преподавателя");
+      return;
+    }
 
     setLoading(true);
     try {
-      const result = await api.signup(email, password, name, role);
+      const result = await api.signup(email, password, name, role, teacherAccessPassword.trim());
       if (result.success) {
         toast.success("Регистрация успешна! Теперь войдите в систему");
         navigate("/");
@@ -92,7 +98,16 @@ export default function Register() {
 
             <div className="space-y-3">
               <Label>Роль</Label>
-              <RadioGroup value={role} onValueChange={(value) => setRole(value as "student" | "teacher")}> 
+              <RadioGroup
+                value={role}
+                onValueChange={(value) => {
+                  const nextRole = value as "student" | "teacher";
+                  setRole(nextRole);
+                  if (nextRole !== "teacher") {
+                    setTeacherAccessPassword("");
+                  }
+                }}
+              >
                 <div className="flex cursor-pointer items-center space-x-3 rounded-lg border p-3 hover:bg-gray-50">
                   <RadioGroupItem value="student" id="student" />
                   <Label htmlFor="student" className="flex flex-1 cursor-pointer items-center gap-2">
@@ -115,6 +130,20 @@ export default function Register() {
                 </div>
               </RadioGroup>
             </div>
+
+            {role === "teacher" && (
+              <div className="space-y-2">
+                <Label htmlFor="teacher-access-password">Пароль-разрешение преподавателя</Label>
+                <Input
+                  id="teacher-access-password"
+                  type="password"
+                  placeholder="Введите пароль-разрешение"
+                  value={teacherAccessPassword}
+                  onChange={(event) => setTeacherAccessPassword(applyTextLimit(event.target.value, 20, "Пароль-разрешение"))}
+                  required
+                />
+              </div>
+            )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Регистрация..." : "Зарегистрироваться"}

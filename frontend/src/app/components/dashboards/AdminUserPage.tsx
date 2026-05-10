@@ -18,6 +18,7 @@ import {
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { api, Course, User } from "../../utils/api";
@@ -44,6 +45,9 @@ export default function AdminUserPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [deletedCourses, setDeletedCourses] = useState<Course[]>([]);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [passwordDialogCourse, setPasswordDialogCourse] = useState<Course | null>(null);
+  const [coursePasswordInput, setCoursePasswordInput] = useState("");
+  const [savingCoursePassword, setSavingCoursePassword] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -165,6 +169,8 @@ export default function AdminUserPage() {
   };
 
   const toggleCoursePassword = async (course: Course) => {
+    if (savingCoursePassword) return;
+
     if (course.hasPassword) {
       if (!window.confirm(`Снять пароль с курса "${course.title}"?`)) return;
       try {
@@ -177,9 +183,14 @@ export default function AdminUserPage() {
       return;
     }
 
-    const password = window.prompt("Введите пароль для курса (от 4 до 10 символов):", "");
-    if (password === null) return;
-    const normalized = password.trim();
+    setCoursePasswordInput("");
+    setPasswordDialogCourse(course);
+  };
+
+  const handleSetCoursePassword = async () => {
+    if (!passwordDialogCourse || savingCoursePassword) return;
+
+    const normalized = coursePasswordInput.trim();
     if (!normalized) {
       toast.error("Введите пароль курса");
       return;
@@ -192,12 +203,18 @@ export default function AdminUserPage() {
       toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
       return;
     }
+
+    setSavingCoursePassword(true);
     try {
-      await api.setCoursePasswordByAdmin(course.id, normalized);
+      await api.setCoursePasswordByAdmin(passwordDialogCourse.id, normalized);
       toast.success("Пароль курса установлен");
+      setPasswordDialogCourse(null);
+      setCoursePasswordInput("");
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка установки пароля курса");
+    } finally {
+      setSavingCoursePassword(false);
     }
   };
 
@@ -230,6 +247,44 @@ export default function AdminUserPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        <Dialog
+          open={Boolean(passwordDialogCourse)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPasswordDialogCourse(null);
+              setCoursePasswordInput("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Установить пароль курса</DialogTitle>
+              <DialogDescription>
+                {passwordDialogCourse ? `Курс: ${passwordDialogCourse.title}` : "Введите пароль от 4 до 10 символов."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="admin-course-password">Пароль курса</Label>
+                <Input
+                  id="admin-course-password"
+                  type="password"
+                  value={coursePasswordInput}
+                  placeholder={`От ${LIMITS.courseAccessPasswordMin} до ${LIMITS.courseAccessPassword} символов`}
+                  onChange={(event) =>
+                    setCoursePasswordInput(
+                      applyTextLimit(event.target.value, LIMITS.courseAccessPassword, "Пароль курса"),
+                    )
+                  }
+                />
+              </div>
+              <Button onClick={handleSetCoursePassword} className="w-full" disabled={savingCoursePassword}>
+                {savingCoursePassword ? "Сохранение..." : "Установить пароль"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <div>
           <Button variant="outline" className="gap-2" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4" />
@@ -418,5 +473,4 @@ export default function AdminUserPage() {
     </Layout>
   );
 }
-
 

@@ -38,6 +38,9 @@ export default function Profile() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [unenrollingCourseId, setUnenrollingCourseId] = useState<string | null>(null);
   const [courseActionId, setCourseActionId] = useState<string | null>(null);
+  const [passwordDialogCourse, setPasswordDialogCourse] = useState<Course | null>(null);
+  const [coursePasswordInput, setCoursePasswordInput] = useState("");
+  const [savingCoursePassword, setSavingCoursePassword] = useState(false);
   const [teacherDialogOpen, setTeacherDialogOpen] = useState(false);
   const [teacherCourseFilter, setTeacherCourseFilter] = useState<TeacherCourseFilter>("all");
   const [newTeacherCourse, setNewTeacherCourse] = useState({
@@ -183,7 +186,7 @@ export default function Profile() {
   };
 
   const handleToggleTeacherCoursePassword = async (course: Course) => {
-    if (courseActionId) return;
+    if (courseActionId || savingCoursePassword) return;
 
     if (course.hasPassword) {
       if (!window.confirm(`Снять пароль с курса "${course.title}"?`)) return;
@@ -200,9 +203,14 @@ export default function Profile() {
       return;
     }
 
-    const password = window.prompt("Введите пароль для курса (от 4 до 10 символов):", "");
-    if (password === null) return;
-    const normalized = password.trim();
+    setCoursePasswordInput("");
+    setPasswordDialogCourse(course);
+  };
+
+  const handleSetTeacherCoursePassword = async () => {
+    if (!passwordDialogCourse || courseActionId || savingCoursePassword) return;
+
+    const normalized = coursePasswordInput.trim();
     if (!normalized) {
       toast.error("Введите пароль курса");
       return;
@@ -215,14 +223,19 @@ export default function Profile() {
       toast.error(`Пароль курса не должен превышать ${LIMITS.courseAccessPassword} символов`);
       return;
     }
-    setCourseActionId(course.id);
+
+    setSavingCoursePassword(true);
+    setCourseActionId(passwordDialogCourse.id);
     try {
-      await api.setCoursePassword(course.id, normalized);
+      await api.setCoursePassword(passwordDialogCourse.id, normalized);
       toast.success("Пароль курса установлен");
+      setPasswordDialogCourse(null);
+      setCoursePasswordInput("");
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка установки пароля курса");
     } finally {
+      setSavingCoursePassword(false);
       setCourseActionId(null);
     }
   };
@@ -303,6 +316,48 @@ export default function Profile() {
   return (
     <Layout>
       <div className="space-y-6">
+        <Dialog
+          open={Boolean(passwordDialogCourse)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPasswordDialogCourse(null);
+              setCoursePasswordInput("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Установить пароль курса</DialogTitle>
+              <DialogDescription>
+                {passwordDialogCourse ? `Курс: ${passwordDialogCourse.title}` : "Введите пароль от 4 до 10 символов."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="profile-course-password">Пароль курса</Label>
+                <Input
+                  id="profile-course-password"
+                  type="password"
+                  value={coursePasswordInput}
+                  placeholder={`От ${LIMITS.courseAccessPasswordMin} до ${LIMITS.courseAccessPassword} символов`}
+                  onChange={(event) =>
+                    setCoursePasswordInput(
+                      applyTextLimit(event.target.value, LIMITS.courseAccessPassword, "Пароль курса"),
+                    )
+                  }
+                />
+              </div>
+              <Button
+                onClick={handleSetTeacherCoursePassword}
+                className="w-full"
+                disabled={savingCoursePassword || Boolean(courseActionId)}
+              >
+                {savingCoursePassword ? "Сохранение..." : "Установить пароль"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Профиль пользователя</CardTitle>
@@ -331,7 +386,7 @@ export default function Profile() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    <span>ID: {user.id}</span>
+                    <span>Публичный ID: {user.publicId}</span>
                   </div>
                 </div>
               </div>
@@ -435,20 +490,20 @@ export default function Profile() {
                     {activeCourses.map((course) => {
                       const courseProgress = progress[course.id];
                       return (
-                        <Card key={course.id} className="relative flex h-full flex-col transition-shadow hover:shadow-lg">
+                        <Card key={course.id} className="relative flex h-full flex-col overflow-hidden transition-shadow hover:shadow-lg">
                           <Button
                             type="button"
                             size="icon"
                             variant="ghost"
                             onClick={() => handleUnenroll(course)}
                             disabled={Boolean(unenrollingCourseId)}
-                            className="absolute top-3 right-3 z-10 h-8 w-8 text-muted-foreground hover:text-destructive"
+                            className="course-header-icon-button course-header-icon-button-danger absolute top-3 right-3 z-10 h-8 w-8"
                             title="Отписаться от курса"
                             aria-label={`Отписаться от курса ${course.title}`}
                           >
                             <UserMinus className="h-4 w-4" />
                           </Button>
-                          <CardHeader className="min-w-0 pb-4">
+                          <CardHeader className="min-w-0 bg-[#27A5E7] pb-4 text-white">
                             {course.imageUrl && (
                               <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
                                 <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
@@ -462,7 +517,7 @@ export default function Profile() {
                               {course.title}
                             </CardTitle>
                             <CardDescription
-                              className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                              className="line-clamp-2 min-h-14 break-words text-white/90 [overflow-wrap:anywhere]"
                               title={course.description}
                             >
                               {course.description}
@@ -516,8 +571,8 @@ export default function Profile() {
                     {completedCourses.map((course) => {
                       const courseProgress = progress[course.id];
                       return (
-                        <Card key={course.id} className="flex h-full flex-col transition-shadow hover:shadow-lg">
-                          <CardHeader className="min-w-0 pb-4">
+                        <Card key={course.id} className="flex h-full flex-col overflow-hidden transition-shadow hover:shadow-lg">
+                          <CardHeader className="min-w-0 bg-[#27A5E7] pb-4 text-white">
                             {course.imageUrl && (
                               <div className="mb-4 aspect-video overflow-hidden rounded-lg bg-gray-200">
                                 <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
@@ -531,7 +586,7 @@ export default function Profile() {
                               {course.title}
                             </CardTitle>
                             <CardDescription
-                              className="line-clamp-2 min-h-14 break-words [overflow-wrap:anywhere]"
+                              className="line-clamp-2 min-h-14 break-words text-white/90 [overflow-wrap:anywhere]"
                               title={course.description}
                             >
                               {course.description}

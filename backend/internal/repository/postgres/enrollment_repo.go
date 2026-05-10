@@ -75,7 +75,7 @@ func (r *EnrollmentRepo) ListCourseStudentsByTeacher(teacherID, courseID int64) 
 	}
 
 	rows, err := r.db.Query(`
-		SELECT u.id, u.name, u.email, u.role, u.blocked, u.avatar_url
+		SELECT u.id, u.public_id, u.name, u.email, u.role, u.blocked, u.avatar_url
 		FROM enrollments e
 		JOIN users u ON u.id = e.user_id
 		WHERE e.course_id=$1
@@ -89,7 +89,7 @@ func (r *EnrollmentRepo) ListCourseStudentsByTeacher(teacherID, courseID int64) 
 	students := make([]domain.User, 0, 16)
 	for rows.Next() {
 		var user domain.User
-		if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.Blocked, &user.AvatarURL); err != nil {
+		if err := rows.Scan(&user.ID, &user.PublicID, &user.Name, &user.Email, &user.Role, &user.Blocked, &user.AvatarURL); err != nil {
 			return nil, err
 		}
 		students = append(students, user)

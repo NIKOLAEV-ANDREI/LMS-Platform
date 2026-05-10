@@ -15,14 +15,17 @@ type AuthService struct {
 	jwtSecret string
 }
 
+const teacherRegistrationPassword = "0000"
+
 func NewAuthService(users repository.UserRepository, jwtSecret string) *AuthService {
 	return &AuthService{users: users, jwtSecret: jwtSecret}
 }
 
-func (s *AuthService) Register(name, email, password string, role domain.Role) (*domain.User, error) {
+func (s *AuthService) Register(name, email, password string, role domain.Role, teacherAccessPassword string) (*domain.User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	name = strings.TrimSpace(name)
 	password = strings.TrimSpace(password)
+	teacherAccessPassword = strings.TrimSpace(teacherAccessPassword)
 	if err := validateUserName(name); err != nil {
 		return nil, err
 	}
@@ -34,6 +37,9 @@ func (s *AuthService) Register(name, email, password string, role domain.Role) (
 	}
 	if role != domain.RoleStudent && role != domain.RoleTeacher {
 		return nil, errors.New("public registration allows only student or teacher")
+	}
+	if role == domain.RoleTeacher && teacherAccessPassword != teacherRegistrationPassword {
+		return nil, errors.New("invalid teacher registration password")
 	}
 	existing, err := s.users.ByEmail(email)
 	if err != nil {

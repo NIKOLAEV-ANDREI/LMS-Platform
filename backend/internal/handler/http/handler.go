@@ -95,10 +95,11 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 }
 
 type registerReq struct {
-	Name     string      `json:"name"`
-	Email    string      `json:"email"`
-	Password string      `json:"password"`
-	Role     domain.Role `json:"role"`
+	Name                  string      `json:"name"`
+	Email                 string      `json:"email"`
+	Password              string      `json:"password"`
+	Role                  domain.Role `json:"role"`
+	TeacherAccessPassword string      `json:"teacher_access_password"`
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +108,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	user, err := h.auth.Register(req.Name, req.Email, req.Password, req.Role)
+	user, err := h.auth.Register(req.Name, req.Email, req.Password, req.Role, req.TeacherAccessPassword)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
