@@ -2323,3 +2323,21 @@ pm run build - OK
   - backend: `go test ./...` - OK
   - frontend: `npm run check:encoding` - OK
   - frontend: `npm run build` - OK
+
+## 117) 2026-05-10 - Render deployment setup
+- Added root `render.yaml` blueprint for one-click Render deploy:
+  - `lms-postgres` database
+  - `lms-backend` Go web service (health check `/health`)
+  - `lms-frontend` static site with SPA rewrite to `/index.html`
+- Added `DEPLOY_RENDER.md` with step-by-step deploy flow and required env updates:
+  - backend `ALLOWED_ORIGIN`
+  - frontend `VITE_API_URL`
+- Updated frontend API network error text to be deployment-safe (no localhost-only hint).
+- Files:
+  - `render.yaml`
+  - `DEPLOY_RENDER.md`
+  - `frontend/src/app/utils/api.ts`
+- Validation:
+  - backend: `go test ./...` - OK
+  - frontend: `npm run build` - OK
+  - frontend: `npm run check:encoding` - OK

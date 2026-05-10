@@ -362,7 +362,7 @@ class API {
       return data;
     } catch (error) {
       if (error instanceof TypeError) {
-        throw new Error('Бэкенд недоступен: проверь запуск Go API на localhost:8080');
+        throw new Error('Бэкенд недоступен: проверьте VITE_API_URL и доступность API');
       }
       if (error instanceof Error) {
         throw new Error(this.localizeErrorMessage(error.message));
