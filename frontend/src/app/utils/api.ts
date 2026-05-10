@@ -77,16 +77,120 @@ export interface LessonSubmission {
 }
 
 export interface Test {
+  settings?: TestSettings;
   questions: Question[];
 }
 
 export interface Question {
   id: string;
-  type: 'single' | 'multiple' | 'open';
+  type: 'single' | 'multiple' | 'open' | 'true_false';
   question: string;
   options?: string[];
-  correctAnswer?: number | string;
+  correctAnswer?: number;
   correctAnswers?: number[];
+  correctText?: string;
+  difficulty?: number;
+}
+
+export interface TestSettings {
+  timeLimitSec: number;
+  passScore: number;
+  maxAttempts: number;
+  randomQuestionCount: number;
+  shuffleQuestions: boolean;
+  shuffleOptions: boolean;
+  showCorrectAnswers: boolean;
+}
+
+export interface LessonTestQuestionPublic {
+  id: string;
+  type: 'single' | 'multiple' | 'open' | 'true_false';
+  question: string;
+  options: string[];
+  difficulty: number;
+}
+
+export interface LessonTestAnswer {
+  questionId: string;
+  option?: number;
+  options?: number[];
+  text?: string;
+}
+
+export interface LessonTestQuestionResult {
+  questionId: string;
+  question: string;
+  type: string;
+  isCorrect: boolean;
+  studentAnswer?: unknown;
+  correctAnswer?: unknown;
+}
+
+export interface LessonTestAttemptStart {
+  attemptId: string;
+  attemptNumber: number;
+  maxAttempts: number;
+  passScore: number;
+  timeLimitSec: number;
+  questions: LessonTestQuestionPublic[];
+  startedAt: string;
+}
+
+export interface LessonTestAttemptResult {
+  attemptId: string;
+  attemptNumber: number;
+  score: number;
+  passed: boolean;
+  timeExpired?: boolean;
+  passScore: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  durationSec: number;
+  showAnswers: boolean;
+  results: LessonTestQuestionResult[];
+  submittedAt: string;
+}
+
+export interface LessonTestAttemptHistoryItem {
+  id: string;
+  attemptNumber: number;
+  totalQuestions: number;
+  correctAnswers: number;
+  score: number;
+  passed: boolean;
+  startedAt: string;
+  submittedAt?: string;
+  studentName?: string;
+  studentEmail?: string;
+}
+
+export interface LessonTestStudentStat {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  attemptsUsed: number;
+  bestScore: number;
+  lastScore: number;
+  passed: boolean;
+}
+
+export interface LessonTestQuestionAnalytics {
+  questionId: string;
+  question: string;
+  difficulty: number;
+  timesShown: number;
+  correctCount: number;
+  correctRate: number;
+}
+
+export interface LessonTestAnalytics {
+  courseId: string;
+  lessonId: string;
+  totalStudents: number;
+  passedStudents: number;
+  failedStudents: number;
+  students: LessonTestStudentStat[];
+  questions: LessonTestQuestionAnalytics[];
 }
 
 export interface TestResult {
@@ -119,8 +223,26 @@ class API {
   private token: string | null = null;
   private readonly tokenKey = 'auth_token';
   private readonly userKey = 'auth_user';
+  private readonly fieldTranslations: Record<string, string> = {
+    name: 'Имя',
+    email: 'Email',
+    password: 'Пароль',
+    title: 'Название',
+    description: 'Описание',
+    'course password': 'Пароль курса',
+    'module title': 'Название модуля',
+    'module description': 'Описание модуля',
+    'lesson title': 'Название урока',
+    'lesson content': 'Содержание урока',
+    'video url': 'Ссылка на видео',
+    'review note': 'Комментарий преподавателя',
+    'submission file name': 'Имя файла',
+    'submission file url': 'Ссылка на файл',
+    'student note': 'Комментарий студента',
+  };
   private readonly errorTranslations: Array<{ test: RegExp; value: string }> = [
     { test: /^Request failed$/i, value: 'Ошибка запроса к серверу' },
+    { test: /^not implemented$/i, value: 'Функция пока не реализована на сервере' },
     { test: /^invalid json$/i, value: 'Некорректный JSON в запросе' },
     { test: /^invalid credentials$/i, value: 'Неверный email или пароль' },
     { test: /user is blocked/i, value: 'Пользователь заблокирован' },
@@ -131,11 +253,14 @@ class API {
     { test: /^invalid token$/i, value: 'Недействительный токен авторизации' },
     { test: /invalid signing method/i, value: 'Недействительный токен авторизации' },
     { test: /invalid token claims/i, value: 'Некорректные данные токена' },
+    { test: /token has invalid claims/i, value: 'Срок действия сессии истек, войдите снова' },
+    { test: /token is expired/i, value: 'Срок действия сессии истек, войдите снова' },
     { test: /role not found/i, value: 'Роль пользователя не определена' },
+    { test: /invalid email format/i, value: 'Некорректный формат email' },
     { test: /email already exists/i, value: 'Пользователь с таким email уже существует' },
     { test: /user already exists/i, value: 'Пользователь с таким email уже существует' },
     { test: /public registration allows only student or teacher/i, value: 'При открытой регистрации доступны только роли студент и преподаватель' },
-    { test: /invalid teacher registration password/i, value: 'Неверный пароль-разрешение для регистрации преподавателя' },
+    { test: /invalid teacher registration password/i, value: 'Неверный код доступа преподавателя' },
     { test: /invalid role/i, value: 'Некорректная роль пользователя' },
     { test: /user not found/i, value: 'Пользователь не найден' },
     { test: /course not found/i, value: 'Курс не найден' },
@@ -163,9 +288,23 @@ class API {
     { test: /invalid review action/i, value: 'Некорректное действие проверки работы' },
     { test: /review note/i, value: 'Комментарий преподавателя слишком длинный' },
     { test: /cannot change own role/i, value: 'Свою роль менять нельзя' },
+    { test: /forbidden:\s*course does not belong to teacher/i, value: 'Недостаточно прав: курс не принадлежит этому преподавателю' },
     { test: /test lesson must have at least one question/i, value: 'Тестовый урок должен содержать минимум один вопрос' },
-    { test: /question (\d+) type must be single, multiple or open/i, value: 'Укажите корректный тип вопроса (single, multiple или open)' },
-    { test: /question (\d+) must have at least 2 options/i, value: 'В вопросе должно быть минимум 2 варианта ответа' },
+    { test: /question (\d+) type must be single, multiple, open or true_false/i, value: 'Укажите корректный тип вопроса (single, multiple, open или true_false)' },
+    { test: /question (\d+) options count must be \d+\.\.\d+/i, value: 'В вопросе указано недопустимое количество вариантов ответа' },
+    { test: /question (\d+) must have at least 1 correct option/i, value: 'Для вопроса с множественным выбором нужен минимум один правильный вариант' },
+    { test: /question (\d+) has invalid correct (option )?index/i, value: 'В вопросе указан некорректный индекс правильного ответа' },
+    { test: /question (\d+) difficulty must be \d+\.\.\d+/i, value: 'Некорректный уровень сложности вопроса' },
+    { test: /test pass score must be \d+\.\.\d+/i, value: 'Проходной балл теста указан неверно' },
+    { test: /test max attempts must be \d+\.\.\d+/i, value: 'Количество попыток теста указано неверно' },
+    { test: /test random question count must be \d+\.\.\d+/i, value: 'Количество вопросов в выборке указано неверно' },
+    { test: /test time limit must be 0\.\.\d+ seconds/i, value: 'Ограничение времени теста указано неверно' },
+    { test: /test attempts limit reached/i, value: 'Лимит попыток для этого теста исчерпан' },
+    { test: /test time is over/i, value: 'Время прохождения теста истекло' },
+    { test: /test attempt not found/i, value: 'Попытка теста не найдена' },
+    { test: /test attempt already submitted/i, value: 'Эта попытка теста уже отправлена' },
+    { test: /lesson is not a test/i, value: 'Этот урок не является тестом' },
+    { test: /invalid test attempt id/i, value: 'Некорректный ID попытки теста' },
     { test: /avatar is too large/i, value: 'Аватар слишком большой' },
     { test: /invalid avatar format/i, value: 'Недопустимый формат аватара' },
     { test: /is required$/i, value: 'Заполните обязательное поле' },
@@ -176,11 +315,102 @@ class API {
     { test: /course password required/i, value: 'Требуется пароль курса' },
     { test: /invalid course password/i, value: 'Неверный пароль курса' },
     { test: /invalid search filter/i, value: 'Некорректный фильтр поиска' },
+    { test: /duplicate key value violates unique constraint/i, value: 'Нарушение уникальности данных (дублирующее значение)' },
+    { test: /violates foreign key constraint/i, value: 'Нарушены связи данных в базе' },
+    { test: /sql: no rows in result set/i, value: 'Запись не найдена' },
+    { test: /relation .* does not exist/i, value: 'Ошибка структуры базы данных (нет нужной таблицы)' },
+    { test: /password authentication failed/i, value: 'Ошибка подключения к базе данных (неверный пароль)' },
+    { test: /connection refused/i, value: 'Сервер базы данных недоступен' },
+    { test: /timeout/i, value: 'Превышено время ожидания ответа сервера' },
   ];
+
+  private humanizeFieldName(rawField: string): string {
+    const normalized = String(rawField || '').trim().toLowerCase();
+    if (!normalized) return 'Поле';
+    return this.fieldTranslations[normalized] || rawField.trim();
+  }
+
+  private localizeDetailedError(message: string): string | null {
+    let match = message.match(/^(.+?) is required$/i);
+    if (match) {
+      return `Поле "${this.humanizeFieldName(match[1])}" обязательно для заполнения`;
+    }
+
+    match = message.match(/^(.+?) is too long \(max (\d+) chars\)$/i);
+    if (match) {
+      return `Поле "${this.humanizeFieldName(match[1])}": максимум ${match[2]} символов`;
+    }
+
+    match = message.match(/^(.+?) is too short \(min (\d+) chars\)$/i);
+    if (match) {
+      return `Поле "${this.humanizeFieldName(match[1])}": минимум ${match[2]} символов`;
+    }
+
+    match = message.match(/^too many attachments \(max (\d+)\)$/i);
+    if (match) {
+      return `Превышено максимально допустимое количество файлов: ${match[1]}`;
+    }
+
+    match = message.match(/^attachment (\d+) size must be 0\.\.(\d+) bytes$/i);
+    if (match) {
+      return `Файл №${match[1]} превышает допустимый размер (${match[2]} байт)`;
+    }
+
+    match = message.match(/^attachment (\d+) has invalid url format$/i);
+    if (match) {
+      return `У файла №${match[1]} некорректный формат ссылки`;
+    }
+
+    match = message.match(/^question (\d+) type must be single, multiple, open or true_false$/i);
+    if (match) {
+      return `Вопрос №${match[1]}: укажите тип single, multiple, open или true_false`;
+    }
+
+    match = message.match(/^question (\d+) options count must be (\d+)\.\.(\d+)$/i);
+    if (match) {
+      return `Вопрос №${match[1]}: количество вариантов должно быть от ${match[2]} до ${match[3]}`;
+    }
+
+    match = message.match(/^forbidden:\s*(.+)$/i);
+    if (match) {
+      const reason = match[1].trim().toLowerCase();
+      if (reason === 'course does not belong to teacher') {
+        return 'Недостаточно прав: курс не принадлежит этому преподавателю';
+      }
+      return `Недостаточно прав: ${match[1].trim()}`;
+    }
+
+    if (/duplicate key value violates unique constraint/i.test(message)) {
+      if (/users_email_key/i.test(message)) {
+        return 'Пользователь с таким email уже существует';
+      }
+      if (/users_public_id_idx/i.test(message)) {
+        return 'Ошибка генерации публичного ID пользователя, повторите попытку';
+      }
+      if (/courses_public_id_idx/i.test(message)) {
+        return 'Ошибка генерации публичного ID курса, повторите попытку';
+      }
+      if (/lesson_submissions_course_id_lesson_id_student_id_key/i.test(message)) {
+        return 'Работа по этому уроку уже отправлена на проверку';
+      }
+      return 'Нарушение уникальности данных (дублирующее значение)';
+    }
+
+    if (/violates foreign key constraint/i.test(message)) {
+      return 'Операция невозможна: связанная запись не найдена или уже удалена';
+    }
+
+    return null;
+  }
 
   private localizeErrorMessage(message: string): string {
     const normalized = String(message || '').trim();
     if (!normalized) return 'Произошла ошибка';
+
+    const detailed = this.localizeDetailedError(normalized);
+    if (detailed) {
+      return detailed;
+    }
 
     for (const translation of this.errorTranslations) {
       if (translation.test.test(normalized)) {
@@ -189,7 +419,7 @@ class API {
     }
 
     if (/[A-Za-z]/.test(normalized)) {
-      return 'Произошла ошибка на сервере';
+      return `Ошибка сервера: ${normalized}`;
     }
 
     return normalized;
@@ -255,15 +485,26 @@ class API {
                   : [],
                 test: l.test && Array.isArray(l.test.questions)
                   ? {
+                      settings: l.test.settings
+                        ? {
+                            timeLimitSec: Number(l.test.settings.timeLimitSec ?? 0),
+                            passScore: Number(l.test.settings.passScore ?? 70),
+                            maxAttempts: Number(l.test.settings.maxAttempts ?? 3),
+                            randomQuestionCount: Number(l.test.settings.randomQuestionCount ?? l.test.questions.length ?? 0),
+                            shuffleQuestions: Boolean(l.test.settings.shuffleQuestions),
+                            shuffleOptions: Boolean(l.test.settings.shuffleOptions),
+                            showCorrectAnswers: Boolean(l.test.settings.showCorrectAnswers),
+                          }
+                        : undefined,
                       questions: l.test.questions.map((q: any) => ({
                         id: String(q.id || ''),
                         type: q.type || 'single',
                         question: q.question || '',
                         options: Array.isArray(q.options) ? q.options.map((opt: any) => String(opt)) : [],
-                        correctAnswer: (typeof q.correctAnswer === 'number' || typeof q.correctAnswer === 'string')
-                          ? q.correctAnswer
-                          : undefined,
-                        correctAnswers: Array.isArray(q.correctAnswers) ? q.correctAnswers : undefined,
+                        correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : undefined,
+                        correctAnswers: Array.isArray(q.correctAnswers) ? q.correctAnswers.map((item: any) => Number(item)) : undefined,
+                        correctText: typeof q.correctText === 'string' ? q.correctText : undefined,
+                        difficulty: typeof q.difficulty === 'number' ? q.difficulty : 3,
                       })),
                     }
                   : undefined,
@@ -308,6 +549,52 @@ class API {
       createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
       updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ""),
       reviewedAt: raw.reviewed_at ?? raw.reviewedAt ?? undefined,
+    };
+  }
+
+  private mapLessonTestAttemptHistoryItem(raw: any): LessonTestAttemptHistoryItem {
+    return {
+      id: String(raw.id),
+      attemptNumber: Number(raw.attempt_number ?? raw.attemptNumber ?? 0),
+      totalQuestions: Number(raw.total_questions ?? raw.totalQuestions ?? 0),
+      correctAnswers: Number(raw.correct_answers ?? raw.correctAnswers ?? 0),
+      score: Number(raw.score ?? 0),
+      passed: Boolean(raw.passed),
+      startedAt: String(raw.started_at ?? raw.startedAt ?? ""),
+      submittedAt: raw.submitted_at ?? raw.submittedAt ?? undefined,
+      studentName: raw.student_name ?? raw.studentName ?? undefined,
+      studentEmail: raw.student_email ?? raw.studentEmail ?? undefined,
+    };
+  }
+
+  private mapLessonTestAnalytics(raw: any): LessonTestAnalytics {
+    return {
+      courseId: String(raw.course_id ?? raw.courseId ?? ""),
+      lessonId: String(raw.lesson_id ?? raw.lessonId ?? ""),
+      totalStudents: Number(raw.total_students ?? raw.totalStudents ?? 0),
+      passedStudents: Number(raw.passed_students ?? raw.passedStudents ?? 0),
+      failedStudents: Number(raw.failed_students ?? raw.failedStudents ?? 0),
+      students: Array.isArray(raw.students)
+        ? raw.students.map((item: any) => ({
+            studentId: String(item.student_id ?? item.studentId ?? ""),
+            studentName: String(item.student_name ?? item.studentName ?? ""),
+            studentEmail: String(item.student_email ?? item.studentEmail ?? ""),
+            attemptsUsed: Number(item.attempts_used ?? item.attemptsUsed ?? 0),
+            bestScore: Number(item.best_score ?? item.bestScore ?? 0),
+            lastScore: Number(item.last_score ?? item.lastScore ?? 0),
+            passed: Boolean(item.passed),
+          }))
+        : [],
+      questions: Array.isArray(raw.questions)
+        ? raw.questions.map((item: any) => ({
+            questionId: String(item.question_id ?? item.questionId ?? ""),
+            question: String(item.question ?? ""),
+            difficulty: Number(item.difficulty ?? 0),
+            timesShown: Number(item.times_shown ?? item.timesShown ?? 0),
+            correctCount: Number(item.correct_count ?? item.correctCount ?? 0),
+            correctRate: Number(item.correct_rate ?? item.correctRate ?? 0),
+          }))
+        : [],
     };
   }
 
@@ -436,7 +723,7 @@ class API {
     };
   }
 
-  async getSession(): Promise<{ user: User }> {
+  async getSession(options?: { syncDashboard?: boolean }): Promise<{ user: User }> {
     const token = this.getToken();
     if (!token) throw new Error('Не авторизован');
 
@@ -444,24 +731,35 @@ class API {
     try {
       const me = await this.request('/me');
       const mapped = this.mapUser(me, localUser);
-      const synced = await this.syncUserFromDashboard(mapped);
-      return { user: synced };
+      if (options?.syncDashboard) {
+        const synced = await this.syncUserFromDashboard(mapped);
+        return { user: synced };
+      }
+      this.saveUser(mapped);
+      return { user: mapped };
     } catch {
       if (!localUser) throw new Error('Сессия не найдена, войди заново');
-      const synced = await this.syncUserFromDashboard(localUser);
-      return { user: synced };
+      if (options?.syncDashboard) {
+        const synced = await this.syncUserFromDashboard(localUser);
+        return { user: synced };
+      }
+      return { user: localUser };
     }
   }
 
   async getCourses(): Promise<{ courses: Course[] }> {
-    const { user } = await this.getSession();
+    let role = this.readUser()?.role;
+    if (!role) {
+      const { user } = await this.getSession();
+      role = user.role;
+    }
 
-    if (user.role === 'student') {
+    if (role === 'student') {
       const courses = await this.request('/courses');
       return { courses: (courses || []).map((c: any) => this.mapCourse(c)) };
     }
 
-    if (user.role === 'teacher') {
+    if (role === 'teacher') {
       const courses = await this.request('/teacher/courses');
       return { courses: (courses || []).map((c: any) => this.mapCourse(c)) };
     }
@@ -756,49 +1054,95 @@ class API {
     return { success: true };
   }
 
-  async submitTest(courseId: string, lessonId: string, answers: any[]) {
-    const { course } = await this.getCourse(courseId);
-    const lesson = course.modules.flatMap((m) => m.lessons).find((l) => l.id === lessonId);
-    if (!lesson || lesson.type !== 'test' || !lesson.test?.questions?.length) {
-      throw new Error('Тест не найден или не настроен');
-    }
-
-    let correctCount = 0;
-    for (let i = 0; i < lesson.test.questions.length; i += 1) {
-      const question = lesson.test.questions[i];
-      const userAnswer = answers[i];
-
-      if (question.type === 'multiple') {
-        const expected = Array.isArray(question.correctAnswers) ? [...question.correctAnswers].sort() : [];
-        const actual = Array.isArray(userAnswer) ? [...userAnswer].sort() : [];
-        if (expected.length > 0 && expected.length === actual.length && expected.every((v, idx) => v === actual[idx])) {
-          correctCount += 1;
-        }
-        continue;
-      }
-
-      if (question.type === 'open') {
-        const expected = String(question.correctAnswer ?? '').trim().toLowerCase();
-        const actual = String(userAnswer ?? '').trim().toLowerCase();
-        if (expected && expected === actual) {
-          correctCount += 1;
-        }
-        continue;
-      }
-
-      if (typeof question.correctAnswer === 'number' && Number(userAnswer) === question.correctAnswer) {
-        correctCount += 1;
-      }
-    }
-
-    const totalQuestions = lesson.test.questions.length;
-    const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+  async startLessonTest(
+    courseId: string,
+    lessonId: string,
+    options?: { forceExtraAttempt?: boolean },
+  ): Promise<{ attempt: LessonTestAttemptStart }> {
+    const row = await this.request(`/courses/${courseId}/lessons/${lessonId}/test/start`, {
+      method: "POST",
+      body: JSON.stringify({
+        forceExtraAttempt: Boolean(options?.forceExtraAttempt),
+      }),
+    });
     return {
-      lessonId,
-      score,
-      correctCount,
-      totalQuestions,
-      completedAt: new Date().toISOString(),
+      attempt: {
+        attemptId: String(row.attemptId),
+        attemptNumber: Number(row.attemptNumber ?? 0),
+        maxAttempts: Number(row.maxAttempts ?? 0),
+        passScore: Number(row.passScore ?? 70),
+        timeLimitSec: Number(row.timeLimitSec ?? 0),
+        questions: Array.isArray(row.questions)
+          ? row.questions.map((question: any) => ({
+              id: String(question.id || ""),
+              type: (question.type || "single") as LessonTestQuestionPublic["type"],
+              question: String(question.question || ""),
+              options: Array.isArray(question.options) ? question.options.map((item: any) => String(item)) : [],
+              difficulty: Number(question.difficulty ?? 3),
+            }))
+          : [],
+        startedAt: String(row.startedAt || ""),
+      },
+    };
+  }
+
+  async submitTest(courseId: string, lessonId: string, attemptId: string, answers: LessonTestAnswer[]) {
+    const row = await this.request(`/courses/${courseId}/lessons/${lessonId}/test/submit`, {
+      method: "POST",
+      body: JSON.stringify({
+        attemptId: Number(attemptId),
+        answers,
+      }),
+    });
+    const raw = row.result || {};
+    return {
+      result: {
+        attemptId: String(raw.attemptId || attemptId),
+        attemptNumber: Number(raw.attemptNumber ?? 0),
+        score: Number(raw.score ?? 0),
+        passed: Boolean(raw.passed),
+        timeExpired: Boolean(raw.timeExpired),
+        passScore: Number(raw.passScore ?? 70),
+        correctAnswers: Number(raw.correctAnswers ?? 0),
+        totalQuestions: Number(raw.totalQuestions ?? 0),
+        durationSec: Number(raw.durationSec ?? 0),
+        showAnswers: Boolean(raw.showAnswers),
+        results: Array.isArray(raw.results)
+          ? raw.results.map((item: any) => ({
+              questionId: String(item.questionId || ""),
+              question: String(item.question || ""),
+              type: String(item.type || ""),
+              isCorrect: Boolean(item.isCorrect),
+              studentAnswer: item.studentAnswer,
+              correctAnswer: item.correctAnswer,
+            }))
+          : [],
+        submittedAt: String(raw.submittedAt || ""),
+      } as LessonTestAttemptResult,
+      progress: row.progress || null,
+    };
+  }
+
+  async getMyLessonTestAttempts(courseId: string, lessonId: string): Promise<{ attempts: LessonTestAttemptHistoryItem[] }> {
+    const rows = await this.request(`/courses/${courseId}/lessons/${lessonId}/test/attempts`);
+    return {
+      attempts: Array.isArray(rows) ? rows.map((row: any) => this.mapLessonTestAttemptHistoryItem(row)) : [],
+    };
+  }
+
+  async getTeacherLessonTestAnalytics(courseId: string, lessonId: string): Promise<{ analytics: LessonTestAnalytics; attempts: LessonTestAttemptHistoryItem[] }> {
+    const row = await this.request(`/teacher/courses/${courseId}/lessons/${lessonId}/test/analytics`);
+    return {
+      analytics: this.mapLessonTestAnalytics(row.analytics || {}),
+      attempts: Array.isArray(row.attempts) ? row.attempts.map((item: any) => this.mapLessonTestAttemptHistoryItem(item)) : [],
+    };
+  }
+
+  async getAdminLessonTestAnalytics(courseId: string, lessonId: string): Promise<{ analytics: LessonTestAnalytics; attempts: LessonTestAttemptHistoryItem[] }> {
+    const row = await this.request(`/admin/courses/${courseId}/lessons/${lessonId}/test/analytics`);
+    return {
+      analytics: this.mapLessonTestAnalytics(row.analytics || {}),
+      attempts: Array.isArray(row.attempts) ? row.attempts.map((item: any) => this.mapLessonTestAttemptHistoryItem(item)) : [],
     };
   }
 

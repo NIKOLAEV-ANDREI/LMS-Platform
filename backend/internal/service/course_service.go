@@ -2,7 +2,10 @@ package service
 
 import (
 	"errors"
+	"math/rand"
+	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"lms-backend/internal/domain"
@@ -147,6 +150,198 @@ func (s *CourseService) CompleteLesson(studentID, courseID, lessonID int64) (*do
 
 func (s *CourseService) GetCourseProgress(studentID, courseID int64) (*domain.CourseProgress, error) {
 	return s.enrollments.GetCourseProgress(studentID, courseID)
+}
+
+func (s *CourseService) StartLessonTestAttempt(studentID, courseID, lessonID int64, forceExtraAttempt bool) (*domain.LessonTestAttemptStart, error) {
+	course, lesson, err := s.getCourseLesson(courseID, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	if lesson.Type != "test" || lesson.Test == nil {
+		return nil, errors.New("lesson is not a test")
+	}
+
+	enrollments, err := s.enrollments.ListByStudent(studentID)
+	if err != nil {
+		return nil, err
+	}
+	isEnrolled := false
+	for _, enrollment := range enrollments {
+		if enrollment.CourseID == courseID {
+			isEnrolled = true
+			break
+		}
+	}
+	if !isEnrolled {
+		return nil, errors.New("student is not enrolled in this course")
+	}
+
+	settings := normalizeTestSettings(lesson.Test.Settings, len(lesson.Test.Questions))
+	attemptsUsed, err := s.enrollments.CountStudentLessonTestAttempts(studentID, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	effectiveMaxAttempts := settings.MaxAttempts
+	if attemptsUsed >= settings.MaxAttempts && !forceExtraAttempt {
+		return nil, errors.New("test attempts limit reached")
+	}
+	if attemptsUsed >= settings.MaxAttempts && forceExtraAttempt {
+		effectiveMaxAttempts = attemptsUsed + 1
+	}
+
+	preparedQuestions, publicQuestions, err := buildAttemptQuestions(lesson.Test.Questions, settings)
+	if err != nil {
+		return nil, err
+	}
+
+	startedAt := time.Now().UTC()
+	attempt := &domain.LessonTestAttempt{
+		CourseID:       course.ID,
+		LessonID:       lesson.ID,
+		StudentID:      studentID,
+		AttemptNumber:  attemptsUsed + 1,
+		MaxAttempts:    effectiveMaxAttempts,
+		PassScore:      settings.PassScore,
+		TimeLimitSec:   settings.TimeLimitSec,
+		TotalQuestions: len(preparedQuestions),
+		Questions:      preparedQuestions,
+		StartedAt:      startedAt,
+	}
+	if err := s.enrollments.CreateLessonTestAttempt(attempt); err != nil {
+		return nil, err
+	}
+
+	return &domain.LessonTestAttemptStart{
+		AttemptID:     attempt.ID,
+		AttemptNumber: attempt.AttemptNumber,
+		MaxAttempts:   effectiveMaxAttempts,
+		PassScore:     settings.PassScore,
+		TimeLimitSec:  settings.TimeLimitSec,
+		Questions:     publicQuestions,
+		StartedAt:     startedAt,
+	}, nil
+}
+
+func (s *CourseService) SubmitLessonTestAttempt(studentID, courseID, lessonID, attemptID int64, answers []domain.LessonTestAnswer) (*domain.LessonTestAttemptSubmitResult, *domain.CourseProgress, error) {
+	attempt, err := s.enrollments.GetStudentLessonTestAttemptByID(studentID, courseID, lessonID, attemptID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if attempt == nil {
+		return nil, nil, errors.New("test attempt not found")
+	}
+	if attempt.SubmittedAt != nil {
+		return nil, nil, errors.New("test attempt already submitted")
+	}
+
+	timeExpired := false
+	if attempt.TimeLimitSec > 0 {
+		deadline := attempt.StartedAt.Add(time.Duration(attempt.TimeLimitSec) * time.Second)
+		timeExpired = time.Now().UTC().After(deadline)
+	}
+
+	resultItems, correctCount, err := evaluateLessonTestAttempt(attempt.Questions, answers)
+	if err != nil {
+		return nil, nil, err
+	}
+	totalQuestions := len(attempt.Questions)
+	score := 0
+	if totalQuestions > 0 {
+		score = int(float64(correctCount) / float64(totalQuestions) * 100.0)
+	}
+	passed := score >= attempt.PassScore
+
+	submittedAt := time.Now().UTC()
+	duration := int(submittedAt.Sub(attempt.StartedAt).Seconds())
+	if duration < 0 {
+		duration = 0
+	}
+
+	attempt.Answers = answers
+	attempt.Results = resultItems
+	attempt.CorrectAnswers = correctCount
+	attempt.TotalQuestions = totalQuestions
+	attempt.Score = score
+	attempt.Passed = passed
+	attempt.DurationSec = duration
+	attempt.SubmittedAt = &submittedAt
+
+	if err := s.enrollments.SubmitLessonTestAttempt(attempt); err != nil {
+		return nil, nil, err
+	}
+
+	var progress *domain.CourseProgress
+	if passed {
+		progress, err = s.enrollments.CompleteLesson(studentID, courseID, lessonID)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	_, lesson, err := s.getCourseLesson(courseID, lessonID)
+	if err != nil {
+		return nil, nil, err
+	}
+	settings := normalizeTestSettings(lesson.Test.Settings, len(lesson.Test.Questions))
+
+	response := &domain.LessonTestAttemptSubmitResult{
+		AttemptID:      attempt.ID,
+		AttemptNumber:  attempt.AttemptNumber,
+		Score:          score,
+		Passed:         passed,
+		TimeExpired:    timeExpired,
+		PassScore:      attempt.PassScore,
+		CorrectAnswers: correctCount,
+		TotalQuestions: totalQuestions,
+		DurationSec:    duration,
+		ShowAnswers:    settings.ShowCorrectAnswers,
+		SubmittedAt:    submittedAt,
+	}
+	if settings.ShowCorrectAnswers {
+		response.Results = resultItems
+	}
+
+	return response, progress, nil
+}
+
+func (s *CourseService) StudentLessonTestAttempts(studentID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	return s.enrollments.ListStudentLessonTestAttempts(studentID, courseID, lessonID)
+}
+
+func (s *CourseService) TeacherLessonTestAnalytics(teacherID, courseID, lessonID int64) (*domain.LessonTestAnalytics, []domain.LessonTestAttempt, error) {
+	course, lesson, err := s.getCourseLesson(courseID, lessonID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if course.TeacherID != teacherID {
+		return nil, nil, errors.New("forbidden: course does not belong to teacher")
+	}
+	if lesson.Type != "test" || lesson.Test == nil {
+		return nil, nil, errors.New("lesson is not a test")
+	}
+
+	attempts, err := s.enrollments.ListTeacherLessonTestAttempts(teacherID, courseID, lessonID)
+	if err != nil {
+		return nil, nil, err
+	}
+	analytics := buildLessonTestAnalytics(courseID, lessonID, lesson.Test.Questions, attempts)
+	return analytics, attempts, nil
+}
+
+func (s *CourseService) AdminLessonTestAnalytics(courseID, lessonID int64) (*domain.LessonTestAnalytics, []domain.LessonTestAttempt, error) {
+	_, lesson, err := s.getCourseLesson(courseID, lessonID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if lesson.Type != "test" || lesson.Test == nil {
+		return nil, nil, errors.New("lesson is not a test")
+	}
+	attempts, err := s.enrollments.ListAdminLessonTestAttempts(courseID, lessonID)
+	if err != nil {
+		return nil, nil, err
+	}
+	analytics := buildLessonTestAnalytics(courseID, lessonID, lesson.Test.Questions, attempts)
+	return analytics, attempts, nil
 }
 
 func (s *CourseService) SubmitLessonForReview(studentID, courseID, lessonID int64, fileName, fileURL, studentNote string) (*domain.LessonSubmission, error) {
@@ -979,4 +1174,306 @@ func (s *CourseService) DeleteLessonByAdmin(courseID, moduleID, lessonID int64) 
 	}
 
 	return s.courses.DeleteLesson(lessonID)
+}
+
+func (s *CourseService) getCourseLesson(courseID, lessonID int64) (*domain.Course, *domain.Lesson, error) {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if course == nil {
+		return nil, nil, errors.New("course not found")
+	}
+	for moduleIndex := range course.Modules {
+		for lessonIndex := range course.Modules[moduleIndex].Lessons {
+			if course.Modules[moduleIndex].Lessons[lessonIndex].ID == lessonID {
+				return course, &course.Modules[moduleIndex].Lessons[lessonIndex], nil
+			}
+		}
+	}
+	return nil, nil, errors.New("lesson not found in this course")
+}
+
+func normalizeTestSettings(raw domain.LessonTestSettings, totalQuestions int) domain.LessonTestSettings {
+	settings := raw
+	if settings.PassScore <= 0 {
+		settings.PassScore = 70
+	}
+	if settings.MaxAttempts <= 0 {
+		settings.MaxAttempts = 3
+	}
+	if settings.RandomQuestionCount <= 0 || settings.RandomQuestionCount > totalQuestions {
+		settings.RandomQuestionCount = totalQuestions
+	}
+	return settings
+}
+
+func buildAttemptQuestions(source []domain.LessonQuestion, settings domain.LessonTestSettings) ([]domain.LessonQuestion, []domain.LessonTestQuestionPublic, error) {
+	if len(source) == 0 {
+		return nil, nil, errors.New("test lesson must have at least one question")
+	}
+
+	questions := make([]domain.LessonQuestion, 0, len(source))
+	for _, question := range source {
+		clone := question
+		clone.Question = strings.TrimSpace(clone.Question)
+		if clone.ID == "" {
+			clone.ID = generateQuestionID(clone.Question)
+		}
+		if clone.Type == "true_false" && len(clone.Options) == 0 {
+			clone.Options = []string{"Верно", "Неверно"}
+		}
+		if clone.Difficulty <= 0 {
+			clone.Difficulty = 3
+		}
+		questions = append(questions, clone)
+	}
+
+	if settings.ShuffleQuestions {
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		rng.Shuffle(len(questions), func(i, j int) {
+			questions[i], questions[j] = questions[j], questions[i]
+		})
+	}
+
+	if settings.RandomQuestionCount > 0 && settings.RandomQuestionCount < len(questions) {
+		questions = questions[:settings.RandomQuestionCount]
+	}
+
+	for index := range questions {
+		if settings.ShuffleOptions && len(questions[index].Options) > 1 && questions[index].Type != "open" {
+			shuffleQuestionOptions(&questions[index])
+		}
+	}
+
+	publicQuestions := make([]domain.LessonTestQuestionPublic, 0, len(questions))
+	for _, question := range questions {
+		publicQuestions = append(publicQuestions, domain.LessonTestQuestionPublic{
+			ID:         question.ID,
+			Type:       question.Type,
+			Question:   question.Question,
+			Options:    question.Options,
+			Difficulty: question.Difficulty,
+		})
+	}
+
+	return questions, publicQuestions, nil
+}
+
+func generateQuestionID(question string) string {
+	base := strings.TrimSpace(strings.ToLower(question))
+	if base == "" {
+		return strings.ReplaceAll(time.Now().UTC().Format("20060102150405.000000000"), ".", "")
+	}
+	base = strings.ReplaceAll(base, " ", "-")
+	if len(base) > 32 {
+		base = base[:32]
+	}
+	return base + "-" + strings.ReplaceAll(time.Now().UTC().Format("150405000000"), ".", "")
+}
+
+func shuffleQuestionOptions(question *domain.LessonQuestion) {
+	if question == nil || len(question.Options) < 2 {
+		return
+	}
+
+	oldToNew := make(map[int]int, len(question.Options))
+	indexes := make([]int, len(question.Options))
+	for index := range question.Options {
+		indexes[index] = index
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	rng.Shuffle(len(indexes), func(i, j int) {
+		indexes[i], indexes[j] = indexes[j], indexes[i]
+	})
+
+	shuffled := make([]string, len(question.Options))
+	for newIndex, oldIndex := range indexes {
+		shuffled[newIndex] = question.Options[oldIndex]
+		oldToNew[oldIndex] = newIndex
+	}
+	question.Options = shuffled
+
+	if question.CorrectAnswer != nil {
+		if mapped, ok := oldToNew[*question.CorrectAnswer]; ok {
+			question.CorrectAnswer = &mapped
+		}
+	}
+	if len(question.CorrectAnswers) > 0 {
+		remapped := make([]int, 0, len(question.CorrectAnswers))
+		for _, oldIndex := range question.CorrectAnswers {
+			if mapped, ok := oldToNew[oldIndex]; ok {
+				remapped = append(remapped, mapped)
+			}
+		}
+		sort.Ints(remapped)
+		question.CorrectAnswers = remapped
+	}
+}
+
+func evaluateLessonTestAttempt(questions []domain.LessonQuestion, answers []domain.LessonTestAnswer) ([]domain.LessonTestQuestionResult, int, error) {
+	answerByQuestion := make(map[string]domain.LessonTestAnswer, len(answers))
+	for _, answer := range answers {
+		answerByQuestion[strings.TrimSpace(answer.QuestionID)] = answer
+	}
+
+	results := make([]domain.LessonTestQuestionResult, 0, len(questions))
+	correctCount := 0
+
+	for _, question := range questions {
+		answer := answerByQuestion[strings.TrimSpace(question.ID)]
+		result := domain.LessonTestQuestionResult{
+			QuestionID: question.ID,
+			Question:   question.Question,
+			Type:       question.Type,
+		}
+
+		switch question.Type {
+		case "multiple":
+			actual := normalizeOptionSet(answer.Options)
+			expected := normalizeOptionSet(question.CorrectAnswers)
+			result.StudentAnswer = actual
+			result.CorrectAnswer = expected
+			result.IsCorrect = equalIntSlices(actual, expected)
+		case "open":
+			actualText := strings.TrimSpace(strings.ToLower(answer.Text))
+			expectedText := strings.TrimSpace(strings.ToLower(question.CorrectText))
+			result.StudentAnswer = answer.Text
+			result.CorrectAnswer = question.CorrectText
+			result.IsCorrect = actualText != "" && actualText == expectedText
+		default:
+			actual := -1
+			if answer.Option != nil {
+				actual = *answer.Option
+			} else if len(answer.Options) > 0 {
+				actual = answer.Options[0]
+			}
+			expected := -1
+			if question.CorrectAnswer != nil {
+				expected = *question.CorrectAnswer
+			}
+			result.StudentAnswer = actual
+			result.CorrectAnswer = expected
+			result.IsCorrect = actual >= 0 && actual == expected
+		}
+
+		if result.IsCorrect {
+			correctCount++
+		}
+		results = append(results, result)
+	}
+
+	return results, correctCount, nil
+}
+
+func normalizeOptionSet(values []int) []int {
+	set := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		if value < 0 {
+			continue
+		}
+		set[value] = struct{}{}
+	}
+	out := make([]int, 0, len(set))
+	for value := range set {
+		out = append(out, value)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func equalIntSlices(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index] != b[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func buildLessonTestAnalytics(courseID, lessonID int64, sourceQuestions []domain.LessonQuestion, attempts []domain.LessonTestAttempt) *domain.LessonTestAnalytics {
+	studentStats := make(map[int64]*domain.LessonTestStudentStat)
+	questionMeta := make(map[string]domain.LessonTestQuestionAnalytics)
+	for _, question := range sourceQuestions {
+		questionMeta[question.ID] = domain.LessonTestQuestionAnalytics{
+			QuestionID: question.ID,
+			Question:   question.Question,
+			Difficulty: question.Difficulty,
+		}
+	}
+
+	for _, attempt := range attempts {
+		if attempt.SubmittedAt == nil {
+			continue
+		}
+		stat, exists := studentStats[attempt.StudentID]
+		if !exists {
+			stat = &domain.LessonTestStudentStat{
+				StudentID:    attempt.StudentID,
+				StudentName:  attempt.StudentName,
+				StudentEmail: attempt.StudentEmail,
+				BestScore:    attempt.Score,
+				LastScore:    attempt.Score,
+				Passed:       attempt.Passed,
+			}
+			studentStats[attempt.StudentID] = stat
+		}
+		stat.AttemptsUsed++
+		if attempt.Score > stat.BestScore {
+			stat.BestScore = attempt.Score
+		}
+		stat.LastScore = attempt.Score
+		if attempt.Passed {
+			stat.Passed = true
+		}
+
+		for _, questionResult := range attempt.Results {
+			meta := questionMeta[questionResult.QuestionID]
+			meta.TimesShown++
+			if questionResult.IsCorrect {
+				meta.CorrectCount++
+			}
+			questionMeta[questionResult.QuestionID] = meta
+		}
+	}
+
+	students := make([]domain.LessonTestStudentStat, 0, len(studentStats))
+	passedCount := 0
+	for _, stat := range studentStats {
+		if stat.Passed {
+			passedCount++
+		}
+		students = append(students, *stat)
+	}
+	sort.Slice(students, func(i, j int) bool {
+		if students[i].StudentName == students[j].StudentName {
+			return students[i].StudentID < students[j].StudentID
+		}
+		return students[i].StudentName < students[j].StudentName
+	})
+
+	questions := make([]domain.LessonTestQuestionAnalytics, 0, len(questionMeta))
+	for _, meta := range questionMeta {
+		if meta.TimesShown > 0 {
+			meta.CorrectRate = int(float64(meta.CorrectCount) / float64(meta.TimesShown) * 100.0)
+		}
+		questions = append(questions, meta)
+	}
+	sort.Slice(questions, func(i, j int) bool {
+		return questions[i].QuestionID < questions[j].QuestionID
+	})
+
+	return &domain.LessonTestAnalytics{
+		CourseID:       courseID,
+		LessonID:       lessonID,
+		TotalStudents:  len(students),
+		PassedStudents: passedCount,
+		FailedStudents: len(students) - passedCount,
+		Students:       students,
+		Questions:      questions,
+	}
 }

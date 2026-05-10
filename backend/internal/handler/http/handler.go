@@ -46,6 +46,9 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.Patch("/courses/{courseID}/progress", h.updateProgress)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Get("/progress/{courseID}", h.getProgress)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/complete", h.completeLesson)
+			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/test/start", h.startLessonTestAttempt)
+			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/test/submit", h.submitLessonTestAttempt)
+			p.With(middleware.RequireRole(domain.RoleStudent)).Get("/courses/{courseID}/lessons/{lessonID}/test/attempts", h.myLessonTestAttempts)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Post("/courses/{courseID}/lessons/{lessonID}/submission", h.submitLessonForReview)
 			p.With(middleware.RequireRole(domain.RoleStudent)).Get("/courses/{courseID}/submissions/me", h.myCourseSubmissions)
 
@@ -67,6 +70,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/students", h.teacherCourseStudents)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/submissions", h.teacherCourseSubmissions)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}/submissions/{submissionID}", h.reviewLessonSubmission)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/lessons/{lessonID}/test/analytics", h.teacherLessonTestAnalytics)
 
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/users", h.listUsers)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/users", h.createUserByAdmin)
@@ -90,6 +94,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{courseID}/modules/{moduleID}/lessons", h.addLessonByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.updateLessonByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.deleteLessonByAdmin)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/courses/{courseID}/lessons/{lessonID}/test/analytics", h.adminLessonTestAnalytics)
 		})
 	})
 }
@@ -512,6 +517,94 @@ func (h *Handler) completeLesson(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, progress)
 }
 
+func (h *Handler) startLessonTestAttempt(w http.ResponseWriter, r *http.Request) {
+	studentID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+	var req struct {
+		ForceExtraAttempt bool `json:"forceExtraAttempt"`
+	}
+	if r.Body != nil {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			writeErr(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+	}
+
+	attempt, err := h.course.StartLessonTestAttempt(studentID, courseID, lessonID, req.ForceExtraAttempt)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, attempt)
+}
+
+func (h *Handler) submitLessonTestAttempt(w http.ResponseWriter, r *http.Request) {
+	studentID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+	var req struct {
+		AttemptID int64                     `json:"attemptId"`
+		Answers   []domain.LessonTestAnswer `json:"answers"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if req.AttemptID <= 0 {
+		writeErr(w, http.StatusBadRequest, "invalid test attempt id")
+		return
+	}
+
+	result, progress, err := h.course.SubmitLessonTestAttempt(studentID, courseID, lessonID, req.AttemptID, req.Answers)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp := map[string]any{"result": result}
+	if progress != nil {
+		resp["progress"] = progress
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) myLessonTestAttempts(w http.ResponseWriter, r *http.Request) {
+	studentID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+	attempts, err := h.course.StudentLessonTestAttempts(studentID, courseID, lessonID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, attempts)
+}
+
 func (h *Handler) submitLessonForReview(w http.ResponseWriter, r *http.Request) {
 	studentID := middleware.UserIDFromContext(r.Context())
 	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
@@ -617,6 +710,53 @@ func (h *Handler) reviewLessonSubmission(w http.ResponseWriter, r *http.Request)
 		resp["progress"] = progress
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) teacherLessonTestAnalytics(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+
+	analytics, attempts, err := h.course.TeacherLessonTestAnalytics(teacherID, courseID, lessonID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"analytics": analytics,
+		"attempts":  attempts,
+	})
+}
+
+func (h *Handler) adminLessonTestAnalytics(w http.ResponseWriter, r *http.Request) {
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+
+	analytics, attempts, err := h.course.AdminLessonTestAnalytics(courseID, lessonID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"analytics": analytics,
+		"attempts":  attempts,
+	})
 }
 
 func (h *Handler) listUsers(w http.ResponseWriter, _ *http.Request) {

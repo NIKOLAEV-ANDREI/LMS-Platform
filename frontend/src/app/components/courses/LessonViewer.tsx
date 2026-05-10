@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Award, CheckCircle, Download, Paperclip, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -6,10 +6,32 @@ import Layout from "../Layout";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Textarea } from "../ui/textarea";
-import { api, Course, Lesson, LessonSubmission, User } from "../../utils/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
+import {
+  api,
+  Course,
+  Lesson,
+  LessonSubmission,
+  LessonTestAnalytics,
+  LessonTestAttemptHistoryItem,
+  LessonTestAttemptResult,
+  LessonTestAttemptStart,
+  LessonTestAnswer,
+  User,
+} from "../../utils/api";
 import { LIMITS } from "../../utils/limits";
 import { sanitizeRichText } from "../../utils/richText";
 
@@ -23,9 +45,20 @@ export default function LessonViewer() {
   const [parentModuleId, setParentModuleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [testAnswers, setTestAnswers] = useState<(number | null)[]>([]);
+  const [activeAttempt, setActiveAttempt] = useState<LessonTestAttemptStart | null>(null);
+  const [testAnswers, setTestAnswers] = useState<Record<string, LessonTestAnswer>>({});
   const [testSubmitted, setTestSubmitted] = useState(false);
-  const [testResult, setTestResult] = useState<any>(null);
+  const [testResult, setTestResult] = useState<LessonTestAttemptResult | null>(null);
+  const [attemptHistory, setAttemptHistory] = useState<LessonTestAttemptHistoryItem[]>([]);
+  const [teacherTestAnalytics, setTeacherTestAnalytics] = useState<LessonTestAnalytics | null>(null);
+  const [teacherTestAttempts, setTeacherTestAttempts] = useState<LessonTestAttemptHistoryItem[]>([]);
+  const [submittingTest, setSubmittingTest] = useState(false);
+  const [startingTest, setStartingTest] = useState(false);
+  const [startConfirmOpen, setStartConfirmOpen] = useState(false);
+  const [forceExtraAttempt, setForceExtraAttempt] = useState(false);
+  const [timeExpiredScreen, setTimeExpiredScreen] = useState(false);
+  const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState<"all" | "passed" | "failed">("all");
+  const [nowTick, setNowTick] = useState(Date.now());
   const [submission, setSubmission] = useState<LessonSubmission | null>(null);
   const [submissionNote, setSubmissionNote] = useState("");
   const [submissionFileName, setSubmissionFileName] = useState("");
@@ -35,6 +68,12 @@ export default function LessonViewer() {
   useEffect(() => {
     loadData();
   }, [courseId, lessonId]);
+
+  useEffect(() => {
+    if (!activeAttempt || activeAttempt.timeLimitSec <= 0) return;
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeAttempt]);
 
   const loadData = async () => {
     try {
@@ -69,14 +108,39 @@ export default function LessonViewer() {
       setSubmissionNote("");
       setSubmissionFileName("");
       setSubmissionFileUrl("");
+      setActiveAttempt(null);
+      setTestSubmitted(false);
+      setTestResult(null);
+      setTestAnswers({});
+      setStartConfirmOpen(false);
+      setForceExtraAttempt(false);
+      setTimeExpiredScreen(false);
+      setAnalyticsStudentFilter("all");
+      setAttemptHistory([]);
+      setTeacherTestAnalytics(null);
+      setTeacherTestAttempts([]);
 
-      if (foundLesson.test) {
-        setTestAnswers(new Array(foundLesson.test.questions.length).fill(null));
-      }
       if (userData.role === "student" && userData.enrolledCourses.includes(courseId)) {
         const { submissions } = await api.getMyCourseSubmissions(courseId);
         const current = submissions.find((item) => item.lessonId === lessonId) || null;
         setSubmission(current);
+        if (foundLesson.type === "test") {
+          const { attempts } = await api.getMyLessonTestAttempts(courseId, lessonId);
+          setAttemptHistory(attempts);
+        }
+      }
+
+      if (foundLesson.type === "test") {
+        if (userData.role === "teacher" && String(courseData.teacherId) === String(userData.id)) {
+          const { analytics, attempts } = await api.getTeacherLessonTestAnalytics(courseId, lessonId);
+          setTeacherTestAnalytics(analytics);
+          setTeacherTestAttempts(attempts);
+        }
+        if (userData.role === "admin") {
+          const { analytics, attempts } = await api.getAdminLessonTestAnalytics(courseId, lessonId);
+          setTeacherTestAnalytics(analytics);
+          setTeacherTestAttempts(attempts);
+        }
       }
     } catch (error: any) {
       toast.error(error.message || "Ошибка загрузки урока");
@@ -108,21 +172,66 @@ export default function LessonViewer() {
     }
   };
 
-  const handleSubmitTest = async () => {
+  const startTestAttempt = async (useExtraAttempt = false) => {
+    if (!courseId || !lessonId) return;
+    setStartingTest(true);
     try {
-      if (!courseId || !lessonId) return;
-      const result = await api.submitTest(courseId, lessonId, testAnswers);
+      const { attempt } = await api.startLessonTest(courseId, lessonId, { forceExtraAttempt: useExtraAttempt });
+      setActiveAttempt(attempt);
+      setTestAnswers({});
+      setTestSubmitted(false);
+      setTestResult(null);
+      setTimeExpiredScreen(false);
+      setStartConfirmOpen(false);
+      setForceExtraAttempt(false);
+    } catch (error: any) {
+      toast.error(error.message || "Не удалось начать тест");
+    } finally {
+      setStartingTest(false);
+    }
+  };
+
+  const setSingleAnswer = (questionId: string, option: number) => {
+    setTestAnswers((prev) => ({ ...prev, [questionId]: { questionId, option } }));
+  };
+
+  const setMultipleAnswer = (questionId: string, option: number, checked: boolean) => {
+    setTestAnswers((prev) => {
+      const current = prev[questionId];
+      const set = new Set(current?.options || []);
+      if (checked) set.add(option);
+      else set.delete(option);
+      return { ...prev, [questionId]: { questionId, options: Array.from(set).sort((a, b) => a - b) } };
+    });
+  };
+
+  const setTextAnswer = (questionId: string, text: string) => {
+    setTestAnswers((prev) => ({ ...prev, [questionId]: { questionId, text } }));
+  };
+
+  const handleSubmitTest = async (options?: { isTimeExpired?: boolean }) => {
+    if (!courseId || !lessonId || !activeAttempt) return;
+    setSubmittingTest(true);
+    try {
+      const answers = Object.values(testAnswers);
+      const { result } = await api.submitTest(courseId, lessonId, activeAttempt.attemptId, answers);
       setTestResult(result);
       setTestSubmitted(true);
-
-      if (result.score >= 70) {
-        await api.completeLesson(courseId, lessonId);
-        toast.success(`Тест пройден! Ваш результат: ${result.score}%`);
+      setActiveAttempt(null);
+      setTimeExpiredScreen(false);
+      const { attempts } = await api.getMyLessonTestAttempts(courseId, lessonId);
+      setAttemptHistory(attempts);
+      if (options?.isTimeExpired || result.timeExpired) {
+        toast.info("Время на прохождение теста истекло. Показаны результаты текущей попытки.");
+      } else if (result.passed) {
+        toast.success(`Тест пройден: ${result.score}%`);
       } else {
-        toast.error(`Тест не пройден. Ваш результат: ${result.score}%`);
+        toast.error(`Тест не пройден: ${result.score}%`);
       }
     } catch (error: any) {
       toast.error(error.message || "Ошибка отправки теста");
+    } finally {
+      setSubmittingTest(false);
     }
   };
 
@@ -276,7 +385,43 @@ export default function LessonViewer() {
     return "";
   };
 
-  const allAnswered = useMemo(() => testAnswers.length > 0 && testAnswers.every((item) => item !== null), [testAnswers]);
+  const allAnswered = useMemo(() => {
+    if (!activeAttempt || activeAttempt.questions.length === 0) return false;
+    return activeAttempt.questions.every((question) => {
+      const answer = testAnswers[question.id];
+      if (!answer) return false;
+      if (question.type === "multiple") return Array.isArray(answer.options) && answer.options.length > 0;
+      if (question.type === "open") return Boolean((answer.text || "").trim());
+      return typeof answer.option === "number";
+    });
+  }, [activeAttempt, testAnswers]);
+
+  const remainingTimeSec = useMemo(() => {
+    if (!activeAttempt || activeAttempt.timeLimitSec <= 0) return 0;
+    const startedMs = Date.parse(activeAttempt.startedAt || "");
+    if (Number.isNaN(startedMs)) return activeAttempt.timeLimitSec;
+    const deadline = startedMs + activeAttempt.timeLimitSec * 1000;
+    return Math.max(0, Math.ceil((deadline - nowTick) / 1000));
+  }, [activeAttempt, nowTick]);
+
+  useEffect(() => {
+    if (!activeAttempt) {
+      setTimeExpiredScreen(false);
+      return;
+    }
+    if (activeAttempt.timeLimitSec > 0 && remainingTimeSec === 0 && !testSubmitted) {
+      setTimeExpiredScreen(true);
+    }
+  }, [activeAttempt, remainingTimeSec, testSubmitted]);
+
+  const formatDuration = (seconds: number) => {
+    const safe = Math.max(0, Math.floor(seconds || 0));
+    const minutes = Math.floor(safe / 60);
+    const secs = safe % 60;
+    if (minutes === 0) return `${secs} сек`;
+    if (secs === 0) return `${minutes} мин`;
+    return `${minutes} мин ${secs} сек`;
+  };
 
   if (loading) {
     return (
@@ -306,6 +451,19 @@ export default function LessonViewer() {
   const isStudentEnrolled = Boolean(isStudent && courseId && user?.enrolledCourses.includes(courseId));
   const requiresReview = Boolean(lesson.requiresReview && (lesson.type === "text" || lesson.type === "video"));
   const canSubmitWork = isStudentEnrolled && requiresReview;
+  const isTeacherOwner = Boolean(user?.role === "teacher" && String(course.teacherId) === String(user?.id));
+  const canReviewTestAnalytics = Boolean(isTeacherOwner || user?.role === "admin");
+  const testMaxAttempts = activeAttempt?.maxAttempts ?? lesson.test?.settings?.maxAttempts ?? 0;
+  const attemptsUsed = activeAttempt?.attemptNumber ?? attemptHistory[0]?.attemptNumber ?? attemptHistory.length;
+  const attemptsLeft = testMaxAttempts > 0 ? Math.max(testMaxAttempts - attemptsUsed, 0) : 0;
+  const startBlockedByLimit = testMaxAttempts > 0 && attemptsLeft === 0;
+  const isTimeOver = Boolean(activeAttempt && activeAttempt.timeLimitSec > 0 && remainingTimeSec === 0);
+  const filteredAnalyticsStudents = (() => {
+    const items = teacherTestAnalytics?.students || [];
+    if (analyticsStudentFilter === "passed") return items.filter((item) => item.passed);
+    if (analyticsStudentFilter === "failed") return items.filter((item) => !item.passed);
+    return items;
+  })();
   const submissionRejected = submission?.status === "rejected";
   const submissionPending = submission?.status === "pending";
   const submissionApproved = submission?.status === "approved";
@@ -319,6 +477,15 @@ export default function LessonViewer() {
             Назад к курсу
           </Button>
         </div>
+
+        {activeAttempt && activeAttempt.timeLimitSec > 0 && !testSubmitted && (
+          <div className="fixed right-6 bottom-6 z-40 rounded-xl border border-primary/40 bg-white/95 px-5 py-4 text-center shadow-xl backdrop-blur-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">До конца теста</p>
+            <p className={`text-4xl font-extrabold tabular-nums ${remainingTimeSec <= 30 ? "text-red-600" : "text-primary"}`}>
+              {Math.floor(remainingTimeSec / 60)}:{String(remainingTimeSec % 60).padStart(2, "0")}
+            </p>
+          </div>
+        )}
 
         <Card>
           <CardHeader>
@@ -439,130 +606,284 @@ export default function LessonViewer() {
 
             {lesson.type === "test" && lesson.test && lesson.test.questions.length > 0 && (
               <div className="space-y-6">
-                {!testSubmitted ? (
-                  <>
-                    {lesson.test.questions.map((question, questionIndex) => (
-                      <Card key={question.id}>
-                        <CardHeader>
-                          <CardTitle className="text-lg">
-                            Вопрос {questionIndex + 1}: {question.question}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <RadioGroup
-                            value={testAnswers[questionIndex]?.toString()}
-                            onValueChange={(value) => {
-                              const next = [...testAnswers];
-                              next[questionIndex] = parseInt(value, 10);
-                              setTestAnswers(next);
+                {isStudentEnrolled && (
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardContent className="pt-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium">
+                            Попытки: использовано {attemptsUsed}{testMaxAttempts > 0 ? ` из ${testMaxAttempts}` : ""}
+                          </p>
+                          {testMaxAttempts > 0 && (
+                            <p className="text-sm text-muted-foreground">Осталось попыток: {attemptsLeft}</p>
+                          )}
+                          <p className="text-sm text-muted-foreground">
+                            {activeAttempt
+                              ? `Попытка #${activeAttempt.attemptNumber} из ${activeAttempt.maxAttempts}`
+                              : "Запустите тест, чтобы начать попытку"}
+                          </p>
+                          {startBlockedByLimit && <p className="text-sm text-destructive">Лимит попыток исчерпан.</p>}
+                          {!activeAttempt && lesson.test?.settings?.timeLimitSec > 0 && (
+                            <p className="text-sm text-muted-foreground">
+                              Время на попытку: {formatDuration(lesson.test.settings.timeLimitSec)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            onClick={() => {
+                              setForceExtraAttempt(false);
+                              setStartConfirmOpen(true);
                             }}
+                            disabled={startingTest || Boolean(activeAttempt) || startBlockedByLimit}
                           >
-                            {question.options?.map((option, optionIndex) => (
-                              <div key={optionIndex} className="flex items-center space-x-3 rounded-lg border p-3 hover:bg-gray-50">
-                                <RadioGroupItem value={optionIndex.toString()} id={`q${questionIndex}-o${optionIndex}`} />
-                                <Label htmlFor={`q${questionIndex}-o${optionIndex}`} className="flex-1 cursor-pointer">
-                                  {option}
-                                </Label>
-                              </div>
-                            ))}
-                          </RadioGroup>
+                            {startingTest ? "Запуск..." : activeAttempt ? "Попытка запущена" : "Начать тест"}
+                          </Button>
+                          {startBlockedByLimit && !activeAttempt && (
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setForceExtraAttempt(true);
+                                setStartConfirmOpen(true);
+                              }}
+                              disabled={startingTest}
+                            >
+                              +1 попытка
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <AlertDialog
+                  open={startConfirmOpen}
+                  onOpenChange={(open) => {
+                    setStartConfirmOpen(open);
+                    if (!open) {
+                      setForceExtraAttempt(false);
+                    }
+                  }}
+                >
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{forceExtraAttempt ? "Добавить попытку и начать тест?" : "Начать попытку теста?"}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {lesson.test?.settings?.timeLimitSec > 0
+                          ? `На прохождение теста выделено ${formatDuration(lesson.test.settings.timeLimitSec)}.`
+                          : "У этого теста нет ограничения по времени."}{" "}
+                        {forceExtraAttempt
+                          ? "Лимит попыток исчерпан, но сейчас будет добавлена дополнительная попытка."
+                          : "После старта попытка сразу начинает отсчёт времени."}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      {testMaxAttempts > 0 && <p>Попыток доступно: {attemptsLeft} из {testMaxAttempts}</p>}
+                      <p>Вопросов в попытке: {lesson.test?.settings?.randomQuestionCount || lesson.test?.questions.length || 0}</p>
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={startingTest}>Отмена</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => startTestAttempt(forceExtraAttempt)}
+                        disabled={startingTest || (startBlockedByLimit && !forceExtraAttempt)}
+                      >
+                        {startingTest ? "Запуск..." : forceExtraAttempt ? "Добавить и начать" : "Начать"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                {activeAttempt && (
+                  <div className="space-y-4">
+                    {timeExpiredScreen || isTimeOver ? (
+                      <Card className="border-amber-300 bg-amber-50">
+                        <CardHeader>
+                          <CardTitle className="text-xl text-amber-900">Время вышло</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <p className="text-amber-900">
+                            Время на прохождение этой попытки истекло. Нажмите кнопку ниже, чтобы завершить попытку и перейти к результатам.
+                          </p>
+                          <Button onClick={() => handleSubmitTest({ isTimeExpired: true })} className="w-full" disabled={submittingTest}>
+                            {submittingTest ? "Формируем результат..." : "Перейти к результатам"}
+                          </Button>
                         </CardContent>
                       </Card>
-                    ))}
-
-                    <Button onClick={handleSubmitTest} className="w-full" disabled={!allAnswered}>
-                      Отправить ответы
-                    </Button>
-                  </>
-                ) : (
-                  <div className="space-y-6">
-                    <Card className={testResult.score >= 70 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-3">
-                          {testResult.score >= 70 ? (
-                            <>
-                              <Award className="h-6 w-6 text-green-600" />
-                              <span className="text-green-900">Тест пройден!</span>
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="h-6 w-6 text-red-600" />
-                              <span className="text-red-900">Попробуйте еще раз</span>
-                            </>
-                          )}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span>Правильных ответов:</span>
-                            <span className="font-bold">
-                              {testResult.correctCount} из {testResult.totalQuestions}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span>Результат:</span>
-                            <span className="text-2xl font-bold">{testResult.score}%</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {lesson.test.questions.map((question, questionIndex) => {
-                      const userAnswer = testAnswers[questionIndex];
-                      const isCorrect = userAnswer === question.correctAnswer;
-
-                      return (
-                        <Card key={question.id} className={isCorrect ? "border-green-200" : "border-red-200"}>
-                          <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-lg">
-                              {isCorrect ? <CheckCircle className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-red-600" />}
-                              Вопрос {questionIndex + 1}: {question.question}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-2">
-                            {question.options?.map((option, optionIndex) => {
-                              const isUserAnswer = userAnswer === optionIndex;
-                              const isCorrectAnswer = question.correctAnswer === optionIndex;
-
-                              return (
-                                <div
-                                  key={optionIndex}
-                                  className={`rounded-lg border p-3 ${
-                                    isCorrectAnswer
-                                      ? "border-green-300 bg-green-50"
-                                      : isUserAnswer
-                                        ? "border-red-300 bg-red-50"
-                                        : ""
-                                  }`}
-                                >
-                                  {option}
-                                  {isCorrectAnswer && <span className="ml-2 font-medium text-green-600">Правильный ответ</span>}
-                                  {isUserAnswer && !isCorrectAnswer && <span className="ml-2 font-medium text-red-600">Ваш ответ</span>}
-                                </div>
-                              );
-                            })}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-
-                    {testResult.score >= 70 ? (
-                      <Button onClick={goBackToCourse} className="w-full">
-                        Вернуться к курсу
-                      </Button>
                     ) : (
-                      <Button
-                        onClick={() => {
-                          setTestSubmitted(false);
-                          setTestAnswers(new Array(lesson.test!.questions.length).fill(null));
-                        }}
-                        className="w-full"
-                      >
-                        Попробовать снова
-                      </Button>
+                      <>
+                        {activeAttempt.questions.map((question, questionIndex) => {
+                          const answer = testAnswers[question.id];
+                          return (
+                            <Card key={question.id}>
+                              <CardHeader>
+                                <CardTitle className="text-lg">
+                                  Вопрос {questionIndex + 1}: {question.question}
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                {question.type === "open" ? (
+                                  <Input
+                                    value={answer?.text || ""}
+                                    onChange={(event) => setTextAnswer(question.id, event.target.value)}
+                                    placeholder="Введите ответ"
+                                  />
+                                ) : (
+                                  <RadioGroup
+                                    value={typeof answer?.option === "number" ? String(answer.option) : undefined}
+                                    onValueChange={(value) => setSingleAnswer(question.id, Number(value))}
+                                  >
+                                    {question.options?.map((option, optionIndex) => (
+                                      <label key={optionIndex} className="flex items-center gap-3 rounded-lg border p-3 hover:bg-gray-50">
+                                        {question.type === "multiple" ? (
+                                          <input
+                                            type="checkbox"
+                                            checked={Boolean(answer?.options?.includes(optionIndex))}
+                                            onChange={(event) => setMultipleAnswer(question.id, optionIndex, event.target.checked)}
+                                          />
+                                        ) : (
+                                          <RadioGroupItem value={optionIndex.toString()} id={`q${questionIndex}-o${optionIndex}`} />
+                                        )}
+                                        <span className="flex-1">{option}</span>
+                                      </label>
+                                    ))}
+                                  </RadioGroup>
+                                )}
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                        <Button onClick={() => handleSubmitTest()} className="w-full" disabled={!allAnswered || submittingTest}>
+                          {submittingTest ? "Отправка..." : "Отправить ответы"}
+                        </Button>
+                      </>
                     )}
                   </div>
+                )}
+
+                {testSubmitted && testResult && (
+                  <Card className={testResult.passed ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        {testResult.passed ? <Award className="h-5 w-5 text-green-700" /> : <XCircle className="h-5 w-5 text-red-700" />}
+                        {testResult.passed ? "Тест пройден" : "Тест не пройден"}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {testResult.timeExpired && (
+                        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                          Попытка завершена по таймеру.
+                        </p>
+                      )}
+                      <p>Балл: <strong>{testResult.score}%</strong> (проходной: {testResult.passScore}%)</p>
+                      <p>Правильных ответов: {testResult.correctAnswers} из {testResult.totalQuestions}</p>
+                      <p>Попытка: #{testResult.attemptNumber}</p>
+                      {testResult.showAnswers && testResult.results.length > 0 && (
+                        <div className="space-y-2 pt-2">
+                          {testResult.results.map((item) => (
+                            <div key={item.questionId} className={`rounded-md border p-2 ${item.isCorrect ? "border-green-200" : "border-red-200"}`}>
+                              <p className="text-sm font-medium">{item.question}</p>
+                              <p className="text-xs">{item.isCorrect ? "Верно" : "Неверно"}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {isStudentEnrolled && attemptHistory.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">История попыток</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {attemptHistory.map((attempt) => (
+                        <div key={attempt.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-sm">
+                          <span>Попытка #{attempt.attemptNumber}</span>
+                          <span>{attempt.score}%</span>
+                          <span>{attempt.correctAnswers}/{attempt.totalQuestions}</span>
+                          <Badge variant={attempt.passed ? "default" : "secondary"}>
+                            {attempt.passed ? "Пройдено" : "Не пройдено"}
+                          </Badge>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {canReviewTestAnalytics && teacherTestAnalytics && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Аналитика теста</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <div className="grid gap-2 md:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => setAnalyticsStudentFilter("passed")}
+                          className={`rounded-md border p-2 text-left transition-colors ${
+                            analyticsStudentFilter === "passed" ? "border-green-500 bg-green-50" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          Прошли: {teacherTestAnalytics.passedStudents}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAnalyticsStudentFilter("failed")}
+                          className={`rounded-md border p-2 text-left transition-colors ${
+                            analyticsStudentFilter === "failed" ? "border-red-500 bg-red-50" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          Не прошли: {teacherTestAnalytics.failedStudents}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAnalyticsStudentFilter("all")}
+                          className={`rounded-md border p-2 text-left transition-colors ${
+                            analyticsStudentFilter === "all" ? "border-primary bg-primary/5" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          Всего студентов: {teacherTestAnalytics.totalStudents}
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="font-medium">Студенты</p>
+                        {filteredAnalyticsStudents.length === 0 && (
+                          <p className="text-xs text-muted-foreground">По выбранному фильтру пока нет данных.</p>
+                        )}
+                        {filteredAnalyticsStudents.map((item) => (
+                          <div key={item.studentId} className="rounded-md border p-2">
+                            <p>{item.studentName} ({item.studentEmail})</p>
+                            <p className="text-xs text-muted-foreground">
+                              Лучший балл: {item.bestScore}% | Последний: {item.lastScore}% | Попытки: {item.attemptsUsed}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="space-y-2">
+                        <p className="font-medium">Сложность вопросов</p>
+                        {teacherTestAnalytics.questions.map((item) => (
+                          <div key={item.questionId} className="rounded-md border p-2">
+                            <p>{item.question}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Сложность: {item.difficulty} | Верных: {item.correctCount}/{item.timesShown} ({item.correctRate}%)
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      {teacherTestAttempts.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="font-medium">История попыток</p>
+                          {teacherTestAttempts.map((attempt) => (
+                            <div key={attempt.id} className="rounded-md border p-2">
+                              <p>{attempt.studentName || "Студент"} — {attempt.score}% (попытка #{attempt.attemptNumber})</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
                 )}
               </div>
             )}
@@ -646,3 +967,4 @@ export default function LessonViewer() {
     </Layout>
   );
 }
+

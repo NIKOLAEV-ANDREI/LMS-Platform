@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ArrowLeft, ClipboardList, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -11,16 +11,19 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
-import { api, Course, Lesson, LessonAttachment } from "../../utils/api";
+import { api, Course, Lesson, LessonAttachment, TestSettings } from "../../utils/api";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
 import { sanitizeRichText, toPlainText } from "../../utils/richText";
 
 type EditableQuestion = {
   id: string;
-  type: "single" | "multiple" | "open";
+  type: "single" | "multiple" | "open" | "true_false";
   question: string;
   options: string[];
-  correctAnswer: number;
+  correctAnswer?: number;
+  correctAnswers: number[];
+  correctText: string;
+  difficulty: number;
 };
 
 const MIN_TEST_OPTIONS = 2;
@@ -36,8 +39,19 @@ type LessonDraft = {
     requiresReview: boolean;
     attachments: LessonAttachment[];
   };
+  testSettings: TestSettings;
   testQuestions: EditableQuestion[];
   savedAt: string;
+};
+
+const defaultTestSettings: TestSettings = {
+  timeLimitSec: 0,
+  passScore: 70,
+  maxAttempts: 3,
+  randomQuestionCount: 0,
+  shuffleQuestions: false,
+  shuffleOptions: false,
+  showCorrectAnswers: false,
 };
 
 export default function LessonEditor() {
@@ -60,6 +74,7 @@ export default function LessonEditor() {
     requiresReview: false,
     attachments: [] as LessonAttachment[],
   });
+  const [testSettings, setTestSettings] = useState<TestSettings>(defaultTestSettings);
   const [testQuestions, setTestQuestions] = useState<EditableQuestion[]>([]);
   const draftStorageKey = courseId && lessonId ? `lms:lesson-editor-draft:${courseId}:${lessonId}` : null;
 
@@ -72,6 +87,7 @@ export default function LessonEditor() {
     const timer = window.setTimeout(() => {
       const draft: LessonDraft = {
         lessonForm,
+        testSettings,
         testQuestions,
         savedAt: new Date().toISOString(),
       };
@@ -81,7 +97,7 @@ export default function LessonEditor() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [draftReady, draftStorageKey, lessonForm, testQuestions]);
+  }, [draftReady, draftStorageKey, lessonForm, testSettings, testQuestions]);
 
   const loadLesson = async () => {
     try {
@@ -125,12 +141,31 @@ export default function LessonEditor() {
               type: question.type || "single",
               question: question.question || "",
               options:
-                Array.isArray(question.options) && question.options.length > 0
+                question.type === "true_false"
+                  ? Array.isArray(question.options) && question.options.length > 0
+                    ? question.options
+                    : ["Верно", "Неверно"]
+                  : Array.isArray(question.options) && question.options.length > 0
                   ? question.options
                   : Array.from({ length: DEFAULT_TEST_OPTIONS }, () => ""),
               correctAnswer: typeof question.correctAnswer === "number" ? question.correctAnswer : 0,
+              correctAnswers: Array.isArray(question.correctAnswers) ? question.correctAnswers : [],
+              correctText: question.correctText || "",
+              difficulty: typeof question.difficulty === "number" ? question.difficulty : 3,
             }))
           : [];
+      const serverSettings: TestSettings =
+        foundLesson.type === "test" && foundLesson.test?.settings
+          ? {
+              timeLimitSec: Number(foundLesson.test.settings.timeLimitSec ?? 0),
+              passScore: Number(foundLesson.test.settings.passScore ?? 70),
+              maxAttempts: Number(foundLesson.test.settings.maxAttempts ?? 3),
+              randomQuestionCount: Number(foundLesson.test.settings.randomQuestionCount ?? 0),
+              shuffleQuestions: Boolean(foundLesson.test.settings.shuffleQuestions),
+              shuffleOptions: Boolean(foundLesson.test.settings.shuffleOptions),
+              showCorrectAnswers: Boolean(foundLesson.test.settings.showCorrectAnswers),
+            }
+          : defaultTestSettings;
 
       let draftData: LessonDraft | null = null;
       if (draftStorageKey) {
@@ -153,10 +188,12 @@ export default function LessonEditor() {
           requiresReview: Boolean(draftData.lessonForm.requiresReview),
           attachments: Array.isArray(draftData.lessonForm.attachments) ? draftData.lessonForm.attachments : [],
         });
+        setTestSettings(draftData.testSettings || serverSettings);
         setTestQuestions(Array.isArray(draftData.testQuestions) ? draftData.testQuestions : []);
         toast.info("Черновик урока восстановлен");
       } else {
         setLessonForm(serverLessonForm);
+        setTestSettings(serverSettings);
         setTestQuestions(serverQuestions);
       }
 
@@ -178,21 +215,53 @@ export default function LessonEditor() {
         question: "",
         options: Array.from({ length: DEFAULT_TEST_OPTIONS }, () => ""),
         correctAnswer: 0,
+        correctAnswers: [],
+        correctText: "",
+        difficulty: 3,
       },
     ]);
   };
 
-  const updateQuestion = (index: number, field: "question" | "correctAnswer", value: string | number) => {
+  const updateQuestion = (index: number, patch: Partial<EditableQuestion>) => {
     setTestQuestions((prev) => {
       const next = [...prev];
-      if (field === "question") {
+      next[index] = { ...next[index], ...patch };
+      return next;
+    });
+  };
+
+  const updateQuestionType = (index: number, type: EditableQuestion["type"]) => {
+    setTestQuestions((prev) => {
+      const next = [...prev];
+      const question = next[index];
+      if (!question) return prev;
+
+      if (type === "open") {
         next[index] = {
-          ...next[index],
-          question: applyTextLimit(String(value), LIMITS.questionText, `Текст вопроса ${index + 1}`),
+          ...question,
+          type,
+          options: [],
+          correctAnswer: undefined,
+          correctAnswers: [],
+          correctText: question.correctText || "",
         };
-      } else {
-        next[index] = { ...next[index], correctAnswer: Number(value) };
+        return next;
       }
+
+      const options = type === "true_false"
+        ? ["Верно", "Неверно"]
+        : question.options.length >= MIN_TEST_OPTIONS
+          ? [...question.options]
+          : Array.from({ length: DEFAULT_TEST_OPTIONS }, () => "");
+
+      next[index] = {
+        ...question,
+        type,
+        options,
+        correctAnswer: type === "multiple" ? undefined : Math.min(question.correctAnswer ?? 0, options.length - 1),
+        correctAnswers: type === "multiple" ? question.correctAnswers : [],
+        correctText: "",
+      };
       return next;
     });
   };
@@ -236,7 +305,26 @@ export default function LessonEditor() {
       next[questionIndex] = {
         ...question,
         options,
-        correctAnswer: Math.min(question.correctAnswer, count - 1),
+        correctAnswer: question.type === "multiple" ? undefined : Math.min(question.correctAnswer ?? 0, count - 1),
+        correctAnswers: question.correctAnswers.filter((optionIndex) => optionIndex < count),
+      };
+      return next;
+    });
+  };
+
+  const toggleMultipleAnswer = (questionIndex: number, optionIndex: number, checked: boolean) => {
+    setTestQuestions((prev) => {
+      const next = [...prev];
+      const question = next[questionIndex];
+      if (!question) return prev;
+
+      const indexes = new Set(question.correctAnswers || []);
+      if (checked) indexes.add(optionIndex);
+      else indexes.delete(optionIndex);
+
+      next[questionIndex] = {
+        ...question,
+        correctAnswers: Array.from(indexes).sort((a, b) => a - b),
       };
       return next;
     });
@@ -309,6 +397,23 @@ export default function LessonEditor() {
     event.preventDefault();
     if (!courseId || !moduleId || !lesson) return;
 
+    const preparedTestQuestions =
+      lessonForm.type === "test"
+        ? testQuestions.map((question) => ({
+            id: question.id,
+            type: question.type,
+            question: question.question,
+            options: question.type === "open" ? [] : question.options,
+            correctAnswer:
+              question.type === "single" || question.type === "true_false"
+                ? question.correctAnswer ?? 0
+                : undefined,
+            correctAnswers: question.type === "multiple" ? question.correctAnswers : undefined,
+            correctText: question.type === "open" ? question.correctText : undefined,
+            difficulty: question.difficulty,
+          }))
+        : [];
+
     const payload: Partial<Lesson> = {
       title: lessonForm.title,
       content:
@@ -321,7 +426,7 @@ export default function LessonEditor() {
       videoUrl: lessonForm.type === "video" ? lessonForm.videoUrl : "",
       requiresReview: lessonForm.type === "test" ? false : lessonForm.requiresReview,
       attachments: lessonForm.type === "text" || lessonForm.type === "video" ? lessonForm.attachments : [],
-      test: lessonForm.type === "test" ? { questions: testQuestions } : undefined,
+      test: lessonForm.type === "test" ? { settings: testSettings, questions: preparedTestQuestions } : undefined,
     };
 
     setSaving(true);
@@ -517,6 +622,125 @@ export default function LessonEditor() {
 
               {lessonForm.type === "test" && (
                 <div className="space-y-4">
+                  <Card className="border-dashed">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Настройки теста</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <Label>Проходной балл (%) (макс {LIMITS.testPassScoreMax})</Label>
+                        <Input
+                          type="number"
+                          min={LIMITS.testPassScoreMin}
+                          max={LIMITS.testPassScoreMax}
+                          value={testSettings.passScore}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              passScore: Math.max(
+                                LIMITS.testPassScoreMin,
+                                Math.min(LIMITS.testPassScoreMax, Number(event.target.value || prev.passScore)),
+                              ),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Максимум попыток (макс {LIMITS.testAttemptsMax})</Label>
+                        <Input
+                          type="number"
+                          min={LIMITS.testAttemptsMin}
+                          max={LIMITS.testAttemptsMax}
+                          value={testSettings.maxAttempts}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              maxAttempts: Math.max(
+                                LIMITS.testAttemptsMin,
+                                Math.min(LIMITS.testAttemptsMax, Number(event.target.value || prev.maxAttempts)),
+                              ),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Лимит времени (мин) (макс {LIMITS.testTimeLimitMaxMin})</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={LIMITS.testTimeLimitMaxMin}
+                          value={Math.floor(testSettings.timeLimitSec / 60)}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              timeLimitSec: Math.max(0, Math.min(LIMITS.testTimeLimitMaxMin, Number(event.target.value || 0))) * 60,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Случайных вопросов в попытке (макс {LIMITS.testRandomQuestionsMax})</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={LIMITS.testRandomQuestionsMax}
+                          value={testSettings.randomQuestionCount}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              randomQuestionCount: Math.max(
+                                0,
+                                Math.min(
+                                  Math.min(LIMITS.testRandomQuestionsMax, Math.max(0, testQuestions.length)),
+                                  Number(event.target.value || 0),
+                                ),
+                              ),
+                            }))
+                          }
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={testSettings.shuffleQuestions}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              shuffleQuestions: event.target.checked,
+                            }))
+                          }
+                        />
+                        Перемешивать вопросы
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={testSettings.shuffleOptions}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              shuffleOptions: event.target.checked,
+                            }))
+                          }
+                        />
+                        Перемешивать варианты ответов
+                      </label>
+                      <label className="flex items-center gap-2 text-sm md:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={testSettings.showCorrectAnswers}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              showCorrectAnswers: event.target.checked,
+                            }))
+                          }
+                        />
+                        Показывать правильные ответы после отправки теста
+                      </label>
+                    </CardContent>
+                  </Card>
+
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Label>Вопросы теста</Label>
                     <Button type="button" onClick={addTestQuestion} size="sm" className="gap-2">
@@ -532,7 +756,11 @@ export default function LessonEditor() {
                           <Input
                             placeholder="Текст вопроса"
                             value={question.question}
-                            onChange={(event) => updateQuestion(questionIndex, "question", event.target.value)}
+                            onChange={(event) =>
+                              updateQuestion(questionIndex, {
+                                question: applyTextLimit(event.target.value, LIMITS.questionText, `Текст вопроса ${questionIndex + 1}`),
+                              })
+                            }
                             required
                           />
                           <Button type="button" variant="ghost" size="icon" onClick={() => removeQuestion(questionIndex)}>
@@ -542,12 +770,63 @@ export default function LessonEditor() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <CharCounter value={question.question || ""} max={LIMITS.questionText} />
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-sm">Тип вопроса</Label>
+                            <Select value={question.type} onValueChange={(value) => updateQuestionType(questionIndex, value as EditableQuestion["type"])}>
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="single">Один вариант</SelectItem>
+                                <SelectItem value="multiple">Несколько вариантов</SelectItem>
+                                <SelectItem value="open">Открытый ответ</SelectItem>
+                                <SelectItem value="true_false">Верно/Неверно</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-sm">Сложность</Label>
+                            <Select
+                              value={String(question.difficulty || 3)}
+                              onValueChange={(value) => updateQuestion(questionIndex, { difficulty: Number(value) })}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1">1</SelectItem>
+                                <SelectItem value="2">2</SelectItem>
+                                <SelectItem value="3">3</SelectItem>
+                                <SelectItem value="4">4</SelectItem>
+                                <SelectItem value="5">5</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {question.type === "open" ? (
+                          <div className="space-y-2">
+                            <Label className="text-sm">Правильный ответ</Label>
+                            <Input
+                              value={question.correctText}
+                              onChange={(event) =>
+                                updateQuestion(questionIndex, {
+                                  correctText: applyTextLimit(event.target.value, LIMITS.questionOption, `Ответ на вопрос ${questionIndex + 1}`),
+                                })
+                              }
+                              required
+                            />
+                          </div>
+                        ) : (
+                          <>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <Label className="text-sm">Варианты ответов</Label>
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground">Кол-во:</span>
                             <Select
                               value={String(question.options.length)}
+                              disabled={question.type === "true_false"}
                               onValueChange={(value) => updateQuestionOptionsCount(questionIndex, value)}
                             >
                               <SelectTrigger className="h-8 w-20">
@@ -578,14 +857,26 @@ export default function LessonEditor() {
                               {option.length}/{LIMITS.questionOption}
                             </span>
                             <input
-                              type="radio"
+                              type={question.type === "multiple" ? "checkbox" : "radio"}
                               name={`correct-${questionIndex}`}
-                              checked={question.correctAnswer === optionIndex}
-                              onChange={() => updateQuestion(questionIndex, "correctAnswer", optionIndex)}
+                              checked={
+                                question.type === "multiple"
+                                  ? question.correctAnswers.includes(optionIndex)
+                                  : question.correctAnswer === optionIndex
+                              }
+                              onChange={(event) => {
+                                if (question.type === "multiple") {
+                                  toggleMultipleAnswer(questionIndex, optionIndex, event.target.checked);
+                                } else {
+                                  updateQuestion(questionIndex, { correctAnswer: optionIndex });
+                                }
+                              }}
                               className="h-4 w-4 text-primary"
                             />
                           </div>
                         ))}
+                          </>
+                        )}
                       </CardContent>
                     </Card>
                   ))}
@@ -661,3 +952,5 @@ export default function LessonEditor() {
     </Layout>
   );
 }
+
+

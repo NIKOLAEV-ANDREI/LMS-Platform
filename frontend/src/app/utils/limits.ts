@@ -26,6 +26,15 @@ export const LIMITS = {
 
   questionText: 500,
   questionOption: 200,
+  testPassScoreMin: 1,
+  testPassScoreMax: 100,
+  testAttemptsMin: 1,
+  testAttemptsMax: 20,
+  testTimeLimitMaxSec: 300 * 60,
+  testTimeLimitMaxMin: 300,
+  testRandomQuestionsMax: 100,
+  testQuestionDifficultyMin: 1,
+  testQuestionDifficultyMax: 5,
 };
 
 const lastWarningByKey = new Map<string, number>();

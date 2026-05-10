@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"lms-backend/internal/domain"
+	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -32,9 +34,19 @@ const (
 	MaxLessonFileSize   = 15 * 1024 * 1024
 	MaxLessonFileURLLen = 20_000_000
 
-	MaxQuestionIDLen     = 64
-	MaxQuestionTextLen   = 500
-	MaxQuestionOptionLen = 200
+	MaxQuestionIDLen       = 64
+	MaxQuestionTextLen     = 500
+	MaxQuestionOptionLen   = 200
+	MinQuestionOptions     = 2
+	MaxQuestionOptions     = 8
+	MinTestPassScore       = 1
+	MaxTestPassScore       = 100
+	MinTestAttempts        = 1
+	MaxTestAttempts        = 20
+	MaxTestTimeLimitSec    = 300 * 60
+	MaxTestRandomQuestions = 100
+	MinQuestionDifficulty  = 1
+	MaxQuestionDifficulty  = 5
 
 	MaxAvatarURLLen = 2_000_000
 
@@ -43,6 +55,8 @@ const (
 	MaxSubmissionStudentNote = 1500
 	MaxSubmissionTeacherNote = 2000
 )
+
+var emailRegex = regexp.MustCompile(`^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$`)
 
 func runeCount(value string) int {
 	return utf8.RuneCountInString(value)
@@ -77,10 +91,17 @@ func validateUserName(name string) error {
 }
 
 func validateEmail(email string) error {
+	email = strings.TrimSpace(email)
 	if err := ensureRequired("email", email); err != nil {
 		return err
 	}
-	return ensureMaxLen("email", email, MaxEmailLen)
+	if err := ensureMaxLen("email", email, MaxEmailLen); err != nil {
+		return err
+	}
+	if !emailRegex.MatchString(email) {
+		return errors.New("invalid email format")
+	}
+	return nil
 }
 
 func validatePassword(password string) error {
@@ -219,6 +240,25 @@ func validateLessonTestData(test *domain.LessonTest) error {
 	if test == nil || len(test.Questions) == 0 {
 		return errors.New("test lesson must have at least one question")
 	}
+	settings := normalizeLessonTestSettings(test.Settings, len(test.Questions))
+	if settings.PassScore < MinTestPassScore || settings.PassScore > MaxTestPassScore {
+		return fmt.Errorf("test pass score must be %d..%d", MinTestPassScore, MaxTestPassScore)
+	}
+	if settings.MaxAttempts < MinTestAttempts || settings.MaxAttempts > MaxTestAttempts {
+		return fmt.Errorf("test max attempts must be %d..%d", MinTestAttempts, MaxTestAttempts)
+	}
+	if settings.TimeLimitSec < 0 || settings.TimeLimitSec > MaxTestTimeLimitSec {
+		return fmt.Errorf("test time limit must be 0..%d seconds", MaxTestTimeLimitSec)
+	}
+	maxRandomQuestions := len(test.Questions)
+	if maxRandomQuestions > MaxTestRandomQuestions {
+		maxRandomQuestions = MaxTestRandomQuestions
+	}
+	if settings.RandomQuestionCount < 0 || settings.RandomQuestionCount > maxRandomQuestions {
+		return fmt.Errorf("test random question count must be 0..%d", maxRandomQuestions)
+	}
+	test.Settings = settings
+
 	for i := range test.Questions {
 		question := &test.Questions[i]
 		question.Type = strings.TrimSpace(question.Type)
@@ -226,8 +266,14 @@ func validateLessonTestData(test *domain.LessonTest) error {
 		if question.Type == "" {
 			question.Type = "single"
 		}
-		if question.Type != "single" && question.Type != "multiple" && question.Type != "open" {
-			return fmt.Errorf("question %d type must be single, multiple or open", i+1)
+		if question.Type != "single" && question.Type != "multiple" && question.Type != "open" && question.Type != "true_false" {
+			return fmt.Errorf("question %d type must be single, multiple, open or true_false", i+1)
+		}
+		if question.Difficulty == 0 {
+			question.Difficulty = 3
+		}
+		if question.Difficulty < MinQuestionDifficulty || question.Difficulty > MaxQuestionDifficulty {
+			return fmt.Errorf("question %d difficulty must be %d..%d", i+1, MinQuestionDifficulty, MaxQuestionDifficulty)
 		}
 		if err := ensureMaxLen("question id", question.ID, MaxQuestionIDLen); err != nil {
 			return err
@@ -238,26 +284,93 @@ func validateLessonTestData(test *domain.LessonTest) error {
 		if err := ensureMaxLen(fmt.Sprintf("question %d text", i+1), question.Question, MaxQuestionTextLen); err != nil {
 			return err
 		}
-		if question.Type != "open" {
-			if len(question.Options) < 2 {
-				return fmt.Errorf("question %d must have at least 2 options", i+1)
+		if question.Type == "open" {
+			question.CorrectText = strings.TrimSpace(question.CorrectText)
+			if err := ensureRequired(fmt.Sprintf("question %d correct text", i+1), question.CorrectText); err != nil {
+				return err
 			}
-			for optionIndex := range question.Options {
-				question.Options[optionIndex] = strings.TrimSpace(question.Options[optionIndex])
-				if err := ensureRequired(fmt.Sprintf("question %d option %d", i+1, optionIndex+1), question.Options[optionIndex]); err != nil {
-					return err
-				}
-				if err := ensureMaxLen(
-					fmt.Sprintf("question %d option %d", i+1, optionIndex+1),
-					question.Options[optionIndex],
-					MaxQuestionOptionLen,
-				); err != nil {
-					return err
-				}
+			if err := ensureMaxLen(fmt.Sprintf("question %d correct text", i+1), question.CorrectText, MaxQuestionOptionLen); err != nil {
+				return err
+			}
+			question.Options = nil
+			question.CorrectAnswer = nil
+			question.CorrectAnswers = nil
+			continue
+		}
+
+		if question.Type == "true_false" && len(question.Options) == 0 {
+			question.Options = []string{"Верно", "Неверно"}
+		}
+		if question.Type == "true_false" && len(question.Options) != 2 {
+			return fmt.Errorf("question %d options count must be 2..2", i+1)
+		}
+
+		if len(question.Options) < MinQuestionOptions || len(question.Options) > MaxQuestionOptions {
+			return fmt.Errorf("question %d options count must be %d..%d", i+1, MinQuestionOptions, MaxQuestionOptions)
+		}
+		for optionIndex := range question.Options {
+			question.Options[optionIndex] = strings.TrimSpace(question.Options[optionIndex])
+			if err := ensureRequired(fmt.Sprintf("question %d option %d", i+1, optionIndex+1), question.Options[optionIndex]); err != nil {
+				return err
+			}
+			if err := ensureMaxLen(
+				fmt.Sprintf("question %d option %d", i+1, optionIndex+1),
+				question.Options[optionIndex],
+				MaxQuestionOptionLen,
+			); err != nil {
+				return err
 			}
 		}
+		if question.Type == "multiple" {
+			if len(question.CorrectAnswers) == 0 {
+				return fmt.Errorf("question %d must have at least 1 correct option", i+1)
+			}
+			seen := make(map[int]struct{}, len(question.CorrectAnswers))
+			for _, index := range question.CorrectAnswers {
+				if index < 0 || index >= len(question.Options) {
+					return fmt.Errorf("question %d has invalid correct option index", i+1)
+				}
+				seen[index] = struct{}{}
+			}
+			normalized := make([]int, 0, len(seen))
+			for index := range seen {
+				normalized = append(normalized, index)
+			}
+			sort.Ints(normalized)
+			question.CorrectAnswers = normalized
+			question.CorrectAnswer = nil
+		} else {
+			if question.CorrectAnswer == nil {
+				return fmt.Errorf("question %d must have correct answer", i+1)
+			}
+			if *question.CorrectAnswer < 0 || *question.CorrectAnswer >= len(question.Options) {
+				return fmt.Errorf("question %d has invalid correct answer index", i+1)
+			}
+			question.CorrectAnswers = nil
+		}
+		question.CorrectText = ""
 	}
 	return nil
+}
+
+func normalizeLessonTestSettings(settings domain.LessonTestSettings, questionCount int) domain.LessonTestSettings {
+	if settings.PassScore == 0 {
+		settings.PassScore = 70
+	}
+	if settings.MaxAttempts == 0 {
+		settings.MaxAttempts = 3
+	}
+	maxRandomQuestions := questionCount
+	if maxRandomQuestions > MaxTestRandomQuestions {
+		maxRandomQuestions = MaxTestRandomQuestions
+	}
+	if settings.RandomQuestionCount < 0 || settings.RandomQuestionCount > maxRandomQuestions {
+		settings.RandomQuestionCount = maxRandomQuestions
+	}
+	if settings.RandomQuestionCount == 0 {
+		settings.RandomQuestionCount = questionCount
+	}
+	return settings
 }
 
 func validateLessonSubmissionPayload(fileName, fileURL, studentNote string) error {
