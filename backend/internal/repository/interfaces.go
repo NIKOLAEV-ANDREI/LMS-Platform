@@ -50,4 +50,11 @@ type EnrollmentRepository interface {
 	ListStudentCourseSubmissions(studentID, courseID int64) ([]domain.LessonSubmission, error)
 	GetTeacherCourseSubmissionByID(teacherID, courseID, submissionID int64) (*domain.LessonSubmission, error)
 	ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID int64, status domain.LessonSubmissionStatus, reviewNote string) (*domain.LessonSubmission, error)
+	CountStudentLessonTestAttempts(studentID, lessonID int64) (int, error)
+	CreateLessonTestAttempt(attempt *domain.LessonTestAttempt) error
+	GetStudentLessonTestAttemptByID(studentID, courseID, lessonID, attemptID int64) (*domain.LessonTestAttempt, error)
+	SubmitLessonTestAttempt(attempt *domain.LessonTestAttempt) error
+	ListStudentLessonTestAttempts(studentID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error)
+	ListTeacherLessonTestAttempts(teacherID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error)
+	ListAdminLessonTestAttempts(courseID, lessonID int64) ([]domain.LessonTestAttempt, error)
 }

@@ -95,3 +95,31 @@ func (r *EnrollmentRepo) GetTeacherCourseSubmissionByID(teacherID, courseID, sub
 func (r *EnrollmentRepo) ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID int64, status domain.LessonSubmissionStatus, reviewNote string) (*domain.LessonSubmission, error) {
 	return nil, errors.New("not implemented")
 }
+
+func (r *EnrollmentRepo) CountStudentLessonTestAttempts(studentID, lessonID int64) (int, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) CreateLessonTestAttempt(attempt *domain.LessonTestAttempt) error {
+	return errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) GetStudentLessonTestAttemptByID(studentID, courseID, lessonID, attemptID int64) (*domain.LessonTestAttempt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) SubmitLessonTestAttempt(attempt *domain.LessonTestAttempt) error {
+	return errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ListStudentLessonTestAttempts(studentID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ListTeacherLessonTestAttempts(teacherID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ListAdminLessonTestAttempts(courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	return nil, errors.New("not implemented")
+}

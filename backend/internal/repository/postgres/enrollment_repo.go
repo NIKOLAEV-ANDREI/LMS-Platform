@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"lms-backend/internal/domain"
 )
@@ -431,4 +432,313 @@ func scanSubmissionQueryRow(row *sql.Row) (*domain.LessonSubmission, error) {
 	}
 	submission.Status = domain.LessonSubmissionStatus(status)
 	return &submission, nil
+}
+
+func (r *EnrollmentRepo) CountStudentLessonTestAttempts(studentID, lessonID int64) (int, error) {
+	var count int
+	if err := r.db.QueryRow(
+		`SELECT COUNT(*) FROM lesson_test_attempts WHERE student_id=$1 AND lesson_id=$2`,
+		studentID,
+		lessonID,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *EnrollmentRepo) CreateLessonTestAttempt(attempt *domain.LessonTestAttempt) error {
+	questionPayload, err := json.Marshal(attempt.Questions)
+	if err != nil {
+		return err
+	}
+
+	var submittedAt any
+	if attempt.SubmittedAt != nil {
+		submittedAt = *attempt.SubmittedAt
+	}
+
+	return r.db.QueryRow(`
+		INSERT INTO lesson_test_attempts(
+			course_id, lesson_id, student_id, attempt_number, max_attempts, pass_score, time_limit_sec,
+			total_questions, correct_answers, score, passed, duration_sec,
+			question_payload, answer_payload, result_payload, started_at, submitted_at
+		)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'[]'::jsonb,'[]'::jsonb,$14,$15)
+		RETURNING id
+	`,
+		attempt.CourseID,
+		attempt.LessonID,
+		attempt.StudentID,
+		attempt.AttemptNumber,
+		attempt.MaxAttempts,
+		attempt.PassScore,
+		attempt.TimeLimitSec,
+		attempt.TotalQuestions,
+		attempt.CorrectAnswers,
+		attempt.Score,
+		attempt.Passed,
+		attempt.DurationSec,
+		questionPayload,
+		attempt.StartedAt,
+		submittedAt,
+	).Scan(&attempt.ID)
+}
+
+func (r *EnrollmentRepo) GetStudentLessonTestAttemptByID(studentID, courseID, lessonID, attemptID int64) (*domain.LessonTestAttempt, error) {
+	row := r.db.QueryRow(`
+		SELECT id, course_id, lesson_id, student_id, attempt_number, max_attempts, pass_score, time_limit_sec,
+		       total_questions, correct_answers, score, passed, duration_sec,
+		       question_payload, answer_payload, result_payload, started_at, submitted_at
+		FROM lesson_test_attempts
+		WHERE id=$1 AND student_id=$2 AND course_id=$3 AND lesson_id=$4
+	`,
+		attemptID,
+		studentID,
+		courseID,
+		lessonID,
+	)
+
+	attempt, err := scanLessonTestAttemptRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("test attempt not found")
+		}
+		return nil, err
+	}
+	return attempt, nil
+}
+
+func (r *EnrollmentRepo) SubmitLessonTestAttempt(attempt *domain.LessonTestAttempt) error {
+	answersPayload, err := json.Marshal(attempt.Answers)
+	if err != nil {
+		return err
+	}
+	resultsPayload, err := json.Marshal(attempt.Results)
+	if err != nil {
+		return err
+	}
+
+	var submittedAt any
+	if attempt.SubmittedAt != nil {
+		submittedAt = *attempt.SubmittedAt
+	}
+
+	_, err = r.db.Exec(`
+		UPDATE lesson_test_attempts
+		SET total_questions=$1,
+		    correct_answers=$2,
+		    score=$3,
+		    passed=$4,
+		    duration_sec=$5,
+		    answer_payload=$6,
+		    submitted_at=$7,
+		    result_payload=$8
+		WHERE id=$9
+	`,
+		attempt.TotalQuestions,
+		attempt.CorrectAnswers,
+		attempt.Score,
+		attempt.Passed,
+		attempt.DurationSec,
+		answersPayload,
+		submittedAt,
+		resultsPayload,
+		attempt.ID,
+	)
+	return err
+}
+
+func (r *EnrollmentRepo) ListStudentLessonTestAttempts(studentID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	rows, err := r.db.Query(`
+		SELECT id, course_id, lesson_id, student_id, attempt_number, max_attempts, pass_score, time_limit_sec,
+		       total_questions, correct_answers, score, passed, duration_sec,
+		       question_payload, answer_payload, result_payload, started_at, submitted_at
+		FROM lesson_test_attempts
+		WHERE student_id=$1 AND course_id=$2 AND lesson_id=$3 AND submitted_at IS NOT NULL
+		ORDER BY attempt_number DESC
+	`, studentID, courseID, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]domain.LessonTestAttempt, 0, 8)
+	for rows.Next() {
+		attempt, err := scanLessonTestAttemptRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, attempt)
+	}
+	return out, rows.Err()
+}
+
+func (r *EnrollmentRepo) ListTeacherLessonTestAttempts(teacherID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	var courseTeacherID int64
+	if err := r.db.QueryRow(`SELECT teacher_id FROM courses WHERE id=$1`, courseID).Scan(&courseTeacherID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("course not found")
+		}
+		return nil, err
+	}
+	if courseTeacherID != teacherID {
+		return nil, errors.New("forbidden: course does not belong to teacher")
+	}
+	return r.listLessonTestAttemptsWithStudent(courseID, lessonID)
+}
+
+func (r *EnrollmentRepo) ListAdminLessonTestAttempts(courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	var exists bool
+	if err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM courses WHERE id=$1)`, courseID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("course not found")
+	}
+	return r.listLessonTestAttemptsWithStudent(courseID, lessonID)
+}
+
+func (r *EnrollmentRepo) listLessonTestAttemptsWithStudent(courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
+	rows, err := r.db.Query(`
+		SELECT a.id, a.course_id, a.lesson_id, a.student_id, COALESCE(u.name,''), COALESCE(u.email,''),
+		       a.attempt_number, a.max_attempts, a.pass_score, a.time_limit_sec,
+		       a.total_questions, a.correct_answers, a.score, a.passed, a.duration_sec,
+		       a.question_payload, a.answer_payload, a.result_payload, a.started_at, a.submitted_at
+		FROM lesson_test_attempts a
+		LEFT JOIN users u ON u.id = a.student_id
+		WHERE a.course_id=$1 AND a.lesson_id=$2 AND a.submitted_at IS NOT NULL
+		ORDER BY a.submitted_at DESC NULLS LAST, a.attempt_number DESC
+	`, courseID, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]domain.LessonTestAttempt, 0, 16)
+	for rows.Next() {
+		attempt, err := scanLessonTestAttemptRowsWithStudent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, attempt)
+	}
+	return out, rows.Err()
+}
+
+func scanLessonTestAttemptRows(rows *sql.Rows) (domain.LessonTestAttempt, error) {
+	var attempt domain.LessonTestAttempt
+	var questionsPayload []byte
+	var answersPayload []byte
+	var resultsPayload []byte
+	if err := rows.Scan(
+		&attempt.ID,
+		&attempt.CourseID,
+		&attempt.LessonID,
+		&attempt.StudentID,
+		&attempt.AttemptNumber,
+		&attempt.MaxAttempts,
+		&attempt.PassScore,
+		&attempt.TimeLimitSec,
+		&attempt.TotalQuestions,
+		&attempt.CorrectAnswers,
+		&attempt.Score,
+		&attempt.Passed,
+		&attempt.DurationSec,
+		&questionsPayload,
+		&answersPayload,
+		&resultsPayload,
+		&attempt.StartedAt,
+		&attempt.SubmittedAt,
+	); err != nil {
+		return domain.LessonTestAttempt{}, err
+	}
+	if err := decodeAttemptPayload(&attempt, questionsPayload, answersPayload, resultsPayload); err != nil {
+		return domain.LessonTestAttempt{}, err
+	}
+	return attempt, nil
+}
+
+func scanLessonTestAttemptRowsWithStudent(rows *sql.Rows) (domain.LessonTestAttempt, error) {
+	var attempt domain.LessonTestAttempt
+	var questionsPayload []byte
+	var answersPayload []byte
+	var resultsPayload []byte
+	if err := rows.Scan(
+		&attempt.ID,
+		&attempt.CourseID,
+		&attempt.LessonID,
+		&attempt.StudentID,
+		&attempt.StudentName,
+		&attempt.StudentEmail,
+		&attempt.AttemptNumber,
+		&attempt.MaxAttempts,
+		&attempt.PassScore,
+		&attempt.TimeLimitSec,
+		&attempt.TotalQuestions,
+		&attempt.CorrectAnswers,
+		&attempt.Score,
+		&attempt.Passed,
+		&attempt.DurationSec,
+		&questionsPayload,
+		&answersPayload,
+		&resultsPayload,
+		&attempt.StartedAt,
+		&attempt.SubmittedAt,
+	); err != nil {
+		return domain.LessonTestAttempt{}, err
+	}
+	if err := decodeAttemptPayload(&attempt, questionsPayload, answersPayload, resultsPayload); err != nil {
+		return domain.LessonTestAttempt{}, err
+	}
+	return attempt, nil
+}
+
+func scanLessonTestAttemptRow(row *sql.Row) (*domain.LessonTestAttempt, error) {
+	var attempt domain.LessonTestAttempt
+	var questionsPayload []byte
+	var answersPayload []byte
+	var resultsPayload []byte
+	if err := row.Scan(
+		&attempt.ID,
+		&attempt.CourseID,
+		&attempt.LessonID,
+		&attempt.StudentID,
+		&attempt.AttemptNumber,
+		&attempt.MaxAttempts,
+		&attempt.PassScore,
+		&attempt.TimeLimitSec,
+		&attempt.TotalQuestions,
+		&attempt.CorrectAnswers,
+		&attempt.Score,
+		&attempt.Passed,
+		&attempt.DurationSec,
+		&questionsPayload,
+		&answersPayload,
+		&resultsPayload,
+		&attempt.StartedAt,
+		&attempt.SubmittedAt,
+	); err != nil {
+		return nil, err
+	}
+	if err := decodeAttemptPayload(&attempt, questionsPayload, answersPayload, resultsPayload); err != nil {
+		return nil, err
+	}
+	return &attempt, nil
+}
+
+func decodeAttemptPayload(attempt *domain.LessonTestAttempt, questionsPayload, answersPayload, resultsPayload []byte) error {
+	if len(questionsPayload) > 0 && string(questionsPayload) != "null" {
+		_ = json.Unmarshal(questionsPayload, &attempt.Questions)
+	}
+	if len(answersPayload) > 0 && string(answersPayload) != "null" {
+		if err := json.Unmarshal(answersPayload, &attempt.Answers); err != nil {
+			return err
+		}
+	}
+	if len(resultsPayload) > 0 && string(resultsPayload) != "null" {
+		if err := json.Unmarshal(resultsPayload, &attempt.Results); err != nil {
+			return err
+		}
+	}
+	return nil
 }
