@@ -2734,3 +2734,13 @@ pm run build - OK
 - Test in-progress lock now blocks both forward and backward lesson/module navigation until attempt is finished.
 - Validation:
   - frontend: `npm run build` - OK
+## 139) 2026-05-13 - Mobile header navigation fix
+- Updated `Layout` mobile header behavior: replaced single logout icon with full mobile navigation drawer (burger menu).
+- Added responsive right-side sheet menu on `md` and below with role-based entries:
+  - student/teacher: Главная, Поиск курсов, Профиль, Выход
+  - teacher: + Проверка работ
+  - admin: Пользователи, Профиль, Выход
+- Mobile menu closes on route selection and opens logout confirmation for `Выход`.
+- Desktop navigation kept unchanged.
+- Validation:
+  - frontend: `npm run build` - OK

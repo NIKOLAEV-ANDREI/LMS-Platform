@@ -11,8 +11,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./ui/alert-dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "./ui/sheet";
 import { api, User } from "../utils/api";
-import { GraduationCap, Home, Search, User as UserIcon, LogOut, Users, FileCheck2 } from "lucide-react";
+import { GraduationCap, Home, Search, User as UserIcon, LogOut, Users, FileCheck2, Menu } from "lucide-react";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -24,6 +32,7 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
   const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -141,9 +150,91 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
             </nav>
 
             <div className="flex md:hidden items-center gap-2">
-              <Button onClick={() => setLogoutDialogOpen(true)} variant="ghost" size="sm">
-                <LogOut className="h-4 w-4" />
-              </Button>
+              <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" aria-label="Открыть меню">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-[86vw] max-w-[360px]">
+                  <SheetHeader>
+                    <SheetTitle>Меню</SheetTitle>
+                    <SheetDescription>Навигация по платформе</SheetDescription>
+                  </SheetHeader>
+
+                  <div className="flex flex-col gap-2 px-4 pb-4">
+                    {user.role !== 'admin' && (
+                      <Link to={getDashboardLink()} onClick={() => setMobileNavOpen(false)}>
+                        <Button
+                          variant={location.pathname.includes('dashboard') ? 'default' : 'outline'}
+                          className="w-full justify-start gap-2"
+                        >
+                          <Home className="h-4 w-4" />
+                          Главная
+                        </Button>
+                      </Link>
+                    )}
+
+                    {(user.role === 'student' || user.role === 'teacher') && (
+                      <Link to="/courses/search" onClick={() => setMobileNavOpen(false)}>
+                        <Button
+                          variant={location.pathname === '/courses/search' ? 'default' : 'outline'}
+                          className="w-full justify-start gap-2"
+                        >
+                          <Search className="h-4 w-4" />
+                          Поиск курсов
+                        </Button>
+                      </Link>
+                    )}
+
+                    {user.role === 'admin' && (
+                      <Link to="/admin/dashboard" onClick={() => setMobileNavOpen(false)}>
+                        <Button
+                          variant={location.pathname.includes('admin') ? 'default' : 'outline'}
+                          className="w-full justify-start gap-2"
+                        >
+                          <Users className="h-4 w-4" />
+                          Пользователи
+                        </Button>
+                      </Link>
+                    )}
+
+                    {user.role === 'teacher' && (
+                      <Link to="/teacher/reviews" onClick={() => setMobileNavOpen(false)}>
+                        <Button
+                          variant={location.pathname === '/teacher/reviews' ? 'default' : 'outline'}
+                          className="w-full justify-start gap-2"
+                        >
+                          <FileCheck2 className="h-4 w-4" />
+                          Проверка работ
+                        </Button>
+                      </Link>
+                    )}
+
+                    <Link to="/profile" onClick={() => setMobileNavOpen(false)}>
+                      <Button
+                        variant={location.pathname === '/profile' ? 'default' : 'outline'}
+                        className="w-full justify-start gap-2"
+                      >
+                        <UserIcon className="h-4 w-4" />
+                        Профиль
+                      </Button>
+                    </Link>
+
+                    <Button
+                      onClick={() => {
+                        setMobileNavOpen(false);
+                        setLogoutDialogOpen(true);
+                      }}
+                      variant="outline"
+                      className="w-full justify-start gap-2 text-destructive border-destructive/40 hover:text-destructive"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Выход
+                    </Button>
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
         </div>
