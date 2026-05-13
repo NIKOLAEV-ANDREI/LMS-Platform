@@ -11,14 +11,25 @@ const (
 )
 
 type User struct {
-	ID           int64  `json:"id"`
-	PublicID     string `json:"public_id"`
-	Name         string `json:"name"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"-"`
-	Role         Role   `json:"role"`
-	Blocked      bool   `json:"blocked"`
-	AvatarURL    string `json:"avatar_url,omitempty"`
+	ID               int64      `json:"id"`
+	PublicID         string     `json:"public_id"`
+	Name             string     `json:"name"`
+	Email            string     `json:"email"`
+	PasswordHash     string     `json:"-"`
+	Role             Role       `json:"role"`
+	Blocked          bool       `json:"blocked"`
+	BlockedAt        *time.Time `json:"blocked_at,omitempty"`
+	AvatarURL        string     `json:"avatar_url,omitempty"`
+	CreatedByAdminID *int64     `json:"-"`
+}
+
+type UserPermanentDeleteConstraints struct {
+	ActiveCourses             int `json:"active_courses"`
+	DeletedCourses            int `json:"deleted_courses"`
+	Enrollments               int `json:"enrollments"`
+	PendingTeacherSubmissions int `json:"pending_teacher_submissions"`
+	PendingStudentSubmissions int `json:"pending_student_submissions"`
+	CreatedAdmins             int `json:"created_admins"`
 }
 
 type Course struct {
@@ -79,13 +90,14 @@ type LessonTest struct {
 }
 
 type LessonTestSettings struct {
-	TimeLimitSec        int  `json:"timeLimitSec"`
-	PassScore           int  `json:"passScore"`
-	MaxAttempts         int  `json:"maxAttempts"`
-	RandomQuestionCount int  `json:"randomQuestionCount"`
-	ShuffleQuestions    bool `json:"shuffleQuestions"`
-	ShuffleOptions      bool `json:"shuffleOptions"`
-	ShowCorrectAnswers  bool `json:"showCorrectAnswers"`
+	TimeLimitSec         int  `json:"timeLimitSec"`
+	PassScore            int  `json:"passScore"`
+	MaxAttempts          int  `json:"maxAttempts"`
+	AllowRetakeAfterPass bool `json:"allowRetakeAfterPass"`
+	RandomQuestionCount  int  `json:"randomQuestionCount"`
+	ShuffleQuestions     bool `json:"shuffleQuestions"`
+	ShuffleOptions       bool `json:"shuffleOptions"`
+	ShowCorrectAnswers   bool `json:"showCorrectAnswers"`
 }
 
 type LessonQuestion struct {
@@ -96,7 +108,6 @@ type LessonQuestion struct {
 	CorrectAnswer  *int     `json:"correctAnswer,omitempty"`
 	CorrectAnswers []int    `json:"correctAnswers,omitempty"`
 	CorrectText    string   `json:"correctText,omitempty"`
-	Difficulty     int      `json:"difficulty,omitempty"`
 }
 
 type CourseProgress struct {
@@ -134,11 +145,10 @@ type LessonSubmission struct {
 }
 
 type LessonTestQuestionPublic struct {
-	ID         string   `json:"id"`
-	Type       string   `json:"type"`
-	Question   string   `json:"question"`
-	Options    []string `json:"options,omitempty"`
-	Difficulty int      `json:"difficulty,omitempty"`
+	ID       string   `json:"id"`
+	Type     string   `json:"type"`
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
 }
 
 type LessonTestAnswer struct {
@@ -218,7 +228,6 @@ type LessonTestStudentStat struct {
 type LessonTestQuestionAnalytics struct {
 	QuestionID   string `json:"question_id"`
 	Question     string `json:"question"`
-	Difficulty   int    `json:"difficulty"`
 	TimesShown   int    `json:"times_shown"`
 	CorrectCount int    `json:"correct_count"`
 	CorrectRate  int    `json:"correct_rate"`
@@ -232,4 +241,17 @@ type LessonTestAnalytics struct {
 	FailedStudents int                           `json:"failed_students"`
 	Students       []LessonTestStudentStat       `json:"students"`
 	Questions      []LessonTestQuestionAnalytics `json:"questions"`
+}
+
+type AdminAuditLog struct {
+	ID          int64     `json:"id"`
+	ActorUserID *int64    `json:"actor_user_id,omitempty"`
+	TargetType  string    `json:"target_type"`
+	TargetID    *int64    `json:"target_id,omitempty"`
+	Action      string    `json:"action"`
+	Result      string    `json:"result"`
+	Details     string    `json:"details"`
+	IP          string    `json:"ip"`
+	UserAgent   string    `json:"user_agent"`
+	CreatedAt   time.Time `json:"created_at"`
 }

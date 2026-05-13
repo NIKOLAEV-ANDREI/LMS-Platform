@@ -45,8 +45,6 @@ const (
 	MaxTestAttempts        = 20
 	MaxTestTimeLimitSec    = 300 * 60
 	MaxTestRandomQuestions = 100
-	MinQuestionDifficulty  = 1
-	MaxQuestionDifficulty  = 5
 
 	MaxAvatarURLLen = 2_000_000
 
@@ -268,12 +266,6 @@ func validateLessonTestData(test *domain.LessonTest) error {
 		}
 		if question.Type != "single" && question.Type != "multiple" && question.Type != "open" && question.Type != "true_false" {
 			return fmt.Errorf("question %d type must be single, multiple, open or true_false", i+1)
-		}
-		if question.Difficulty == 0 {
-			question.Difficulty = 3
-		}
-		if question.Difficulty < MinQuestionDifficulty || question.Difficulty > MaxQuestionDifficulty {
-			return fmt.Errorf("question %d difficulty must be %d..%d", i+1, MinQuestionDifficulty, MaxQuestionDifficulty)
 		}
 		if err := ensureMaxLen("question id", question.ID, MaxQuestionIDLen); err != nil {
 			return err

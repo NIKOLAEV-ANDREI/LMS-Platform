@@ -23,7 +23,6 @@ type EditableQuestion = {
   correctAnswer?: number;
   correctAnswers: number[];
   correctText: string;
-  difficulty: number;
 };
 
 const MIN_TEST_OPTIONS = 2;
@@ -48,6 +47,7 @@ const defaultTestSettings: TestSettings = {
   timeLimitSec: 0,
   passScore: 70,
   maxAttempts: 3,
+  allowRetakeAfterPass: false,
   randomQuestionCount: 0,
   shuffleQuestions: false,
   shuffleOptions: false,
@@ -151,7 +151,6 @@ export default function LessonEditor() {
               correctAnswer: typeof question.correctAnswer === "number" ? question.correctAnswer : 0,
               correctAnswers: Array.isArray(question.correctAnswers) ? question.correctAnswers : [],
               correctText: question.correctText || "",
-              difficulty: typeof question.difficulty === "number" ? question.difficulty : 3,
             }))
           : [];
       const serverSettings: TestSettings =
@@ -160,6 +159,7 @@ export default function LessonEditor() {
               timeLimitSec: Number(foundLesson.test.settings.timeLimitSec ?? 0),
               passScore: Number(foundLesson.test.settings.passScore ?? 70),
               maxAttempts: Number(foundLesson.test.settings.maxAttempts ?? 3),
+              allowRetakeAfterPass: Boolean(foundLesson.test.settings.allowRetakeAfterPass),
               randomQuestionCount: Number(foundLesson.test.settings.randomQuestionCount ?? 0),
               shuffleQuestions: Boolean(foundLesson.test.settings.shuffleQuestions),
               shuffleOptions: Boolean(foundLesson.test.settings.shuffleOptions),
@@ -217,7 +217,6 @@ export default function LessonEditor() {
         correctAnswer: 0,
         correctAnswers: [],
         correctText: "",
-        difficulty: 3,
       },
     ]);
   };
@@ -410,7 +409,6 @@ export default function LessonEditor() {
                 : undefined,
             correctAnswers: question.type === "multiple" ? question.correctAnswers : undefined,
             correctText: question.type === "open" ? question.correctText : undefined,
-            difficulty: question.difficulty,
           }))
         : [];
 
@@ -738,6 +736,19 @@ export default function LessonEditor() {
                         />
                         Показывать правильные ответы после отправки теста
                       </label>
+                      <label className="flex items-center gap-2 text-sm md:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={testSettings.allowRetakeAfterPass}
+                          onChange={(event) =>
+                            setTestSettings((prev) => ({
+                              ...prev,
+                              allowRetakeAfterPass: event.target.checked,
+                            }))
+                          }
+                        />
+                        Разрешить повторное прохождение после успешной сдачи
+                      </label>
                     </CardContent>
                   </Card>
 
@@ -770,7 +781,7 @@ export default function LessonEditor() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <CharCounter value={question.question || ""} max={LIMITS.questionText} />
-                        <div className="grid gap-2 md:grid-cols-2">
+                        <div className="grid gap-2 md:grid-cols-1">
                           <div className="space-y-1">
                             <Label className="text-sm">Тип вопроса</Label>
                             <Select value={question.type} onValueChange={(value) => updateQuestionType(questionIndex, value as EditableQuestion["type"])}>
@@ -782,24 +793,6 @@ export default function LessonEditor() {
                                 <SelectItem value="multiple">Несколько вариантов</SelectItem>
                                 <SelectItem value="open">Открытый ответ</SelectItem>
                                 <SelectItem value="true_false">Верно/Неверно</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-sm">Сложность</Label>
-                            <Select
-                              value={String(question.difficulty || 3)}
-                              onValueChange={(value) => updateQuestion(questionIndex, { difficulty: Number(value) })}
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="1">1</SelectItem>
-                                <SelectItem value="2">2</SelectItem>
-                                <SelectItem value="3">3</SelectItem>
-                                <SelectItem value="4">4</SelectItem>
-                                <SelectItem value="5">5</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>

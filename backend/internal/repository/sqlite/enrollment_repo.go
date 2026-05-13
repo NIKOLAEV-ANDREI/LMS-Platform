@@ -123,3 +123,11 @@ func (r *EnrollmentRepo) ListTeacherLessonTestAttempts(teacherID, courseID, less
 func (r *EnrollmentRepo) ListAdminLessonTestAttempts(courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
 	return nil, errors.New("not implemented")
 }
+
+func (r *EnrollmentRepo) ResetStudentLessonTestResultsByTeacher(teacherID, courseID, lessonID, studentID int64) error {
+	return errors.New("not implemented")
+}
+
+func (r *EnrollmentRepo) ResetStudentLessonTestResultsByAdmin(courseID, lessonID, studentID int64) error {
+	return errors.New("not implemented")
+}

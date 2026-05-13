@@ -180,6 +180,31 @@ func (r *CourseRepo) DeleteCourse(courseID int64) error {
 	return err
 }
 
+func (r *CourseRepo) PermanentlyDeleteCourse(courseID int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`DELETE FROM enrollments WHERE course_id=$1`, courseID); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`DELETE FROM courses WHERE id=$1`, courseID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errors.New("course not found")
+	}
+
+	return tx.Commit()
+}
+
 func (r *CourseRepo) AddModule(module *domain.Module) error {
 	var nextOrder int
 	if err := r.db.QueryRow(`SELECT COALESCE(MAX(sort_order), -1) + 1 FROM course_modules WHERE course_id=$1`, module.CourseID).Scan(&nextOrder); err != nil {

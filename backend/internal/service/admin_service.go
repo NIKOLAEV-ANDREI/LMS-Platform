@@ -2,7 +2,10 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"lms-backend/internal/domain"
@@ -14,11 +17,13 @@ type AdminService struct {
 	courses repository.CourseRepository
 }
 
+const userPermanentDeleteCooldown = 30 * 24 * time.Hour
+
 func NewAdminService(users repository.UserRepository, courses repository.CourseRepository) *AdminService {
 	return &AdminService{users: users, courses: courses}
 }
 
-func (s *AdminService) CreateUser(name, email, password string, role domain.Role) (*domain.User, error) {
+func (s *AdminService) CreateUser(name, email, password string, role domain.Role, createdByAdminID *int64) (*domain.User, error) {
 	name = strings.TrimSpace(name)
 	email = strings.TrimSpace(strings.ToLower(email))
 	password = strings.TrimSpace(password)
@@ -54,11 +59,12 @@ func (s *AdminService) CreateUser(name, email, password string, role domain.Role
 	}
 
 	user := &domain.User{
-		Name:         name,
-		Email:        email,
-		PasswordHash: string(hash),
-		Role:         role,
-		PublicID:     publicID,
+		Name:             name,
+		Email:            email,
+		PasswordHash:     string(hash),
+		Role:             role,
+		PublicID:         publicID,
+		CreatedByAdminID: createdByAdminID,
 	}
 	if err := s.users.Create(user); err != nil {
 		return nil, err
@@ -91,6 +97,79 @@ func (s *AdminService) SetRole(id int64, role domain.Role) error {
 		return errors.New("invalid role")
 	}
 	return s.users.SetRole(id, role)
+}
+
+func (s *AdminService) PermanentlyDeleteUser(actorUserID, targetUserID int64) error {
+	if actorUserID == targetUserID {
+		return errors.New("cannot permanently delete own user")
+	}
+
+	actor, err := s.users.ByID(actorUserID)
+	if err != nil {
+		return err
+	}
+	if actor == nil {
+		return errors.New("user not found")
+	}
+	if actor.CreatedByAdminID != nil && *actor.CreatedByAdminID == targetUserID {
+		return errors.New("cannot permanently delete creator admin")
+	}
+
+	target, err := s.users.ByID(targetUserID)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return errors.New("user not found")
+	}
+	if !target.Blocked {
+		return errors.New("user must be blocked before permanent delete")
+	}
+	if target.BlockedAt == nil {
+		return errors.New("user permanent delete cooldown active (days_left=30)")
+	}
+
+	elapsed := time.Since(target.BlockedAt.UTC())
+	if elapsed < userPermanentDeleteCooldown {
+		remaining := int(math.Ceil((userPermanentDeleteCooldown - elapsed).Hours() / 24))
+		if remaining < 1 {
+			remaining = 1
+		}
+		return fmt.Errorf("user permanent delete cooldown active (days_left=%d)", remaining)
+	}
+
+	constraints, err := s.users.GetPermanentDeleteConstraints(targetUserID)
+	if err != nil {
+		return err
+	}
+	if constraints.ActiveCourses > 0 {
+		return errors.New("cannot permanently delete user with active courses")
+	}
+	if constraints.DeletedCourses > 0 {
+		return errors.New("cannot permanently delete user with deleted courses")
+	}
+	if constraints.Enrollments > 0 {
+		return errors.New("cannot permanently delete user with enrollments")
+	}
+	if constraints.PendingTeacherSubmissions > 0 {
+		return errors.New("cannot permanently delete user with pending teacher submissions")
+	}
+	if constraints.PendingStudentSubmissions > 0 {
+		return errors.New("cannot permanently delete user with pending student submissions")
+	}
+	if constraints.CreatedAdmins > 0 {
+		return errors.New("cannot permanently delete user with dependent admins")
+	}
+
+	details := fmt.Sprintf(
+		"target_name=%s;target_email=%s;target_role=%s;blocked_at=%s",
+		target.Name,
+		target.Email,
+		target.Role,
+		target.BlockedAt.UTC().Format(time.RFC3339),
+	)
+
+	return s.users.PermanentlyDeleteWithAudit(targetUserID, actorUserID, "user_permanent_delete", details)
 }
 
 func (s *AdminService) ApproveCourse(courseID int64) error { return s.courses.Approve(courseID) }

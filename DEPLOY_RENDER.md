@@ -1,43 +1,43 @@
-# Deploy on Render (React + Go + PostgreSQL)
+# Деплой на Render (React + Go + PostgreSQL)
 
-## 1) Push current code to GitHub
-Use your main branch with the latest changes.
+## 1) Отправьте актуальный код в GitHub
+Используйте ветку `main` с последними изменениями.
 
-## 2) Create Blueprint in Render
-1. Open Render Dashboard.
-2. Click `New` -> `Blueprint`.
-3. Select repository: `NIKOLAEV-ANDREI/LMS-Platform`.
-4. Render will detect `render.yaml` in project root.
-5. Click `Apply`.
+## 2) Создайте Blueprint в Render
+1. Откройте панель Render.
+2. Нажмите `New` -> `Blueprint`.
+3. Выберите репозиторий: `NIKOLAEV-ANDREI/LMS-Platform`.
+4. Render автоматически найдёт `render.yaml` в корне проекта.
+5. Нажмите `Apply`.
 
-This creates:
+Будут созданы:
 - `lms-postgres` (PostgreSQL)
 - `lms-backend` (Go API)
-- `lms-frontend` (static React build)
+- `lms-frontend` (статический React-сайт)
 
-## 3) Important: set real public URLs in env
-After first deploy, open service settings and update:
+## 3) Важно: укажите реальные публичные URL в переменных окружения
+После первого деплоя откройте настройки сервисов и обновите переменные:
 
 ### Backend (`lms-backend`)
-- `ALLOWED_ORIGIN` = exact frontend URL
-  - example: `https://lms-frontend.onrender.com`
+- `ALLOWED_ORIGIN` = точный URL фронтенда
+  - пример: `https://lms-frontend.onrender.com`
 
 ### Frontend (`lms-frontend`)
-- `VITE_API_URL` = exact backend URL + `/api`
-  - example: `https://lms-backend.onrender.com/api`
+- `VITE_API_URL` = точный URL бэкенда + `/api`
+  - пример: `https://lms-backend.onrender.com/api`
 
-If your service names differ, use your real URLs from Render.
+Если имена сервисов у вас отличаются, используйте свои реальные URL из Render.
 
-## 4) Redeploy both services
-After env changes:
-1. Redeploy backend.
-2. Redeploy frontend.
+## 4) Перезапустите деплой обоих сервисов
+После изменения переменных:
+1. Перезапустите деплой backend.
+2. Перезапустите деплой frontend.
 
-## 5) Smoke test
-1. Open frontend URL.
-2. Register/login.
-3. Check in browser devtools that API requests go to your Render backend URL, not localhost.
+## 5) Быстрая проверка
+1. Откройте ссылку фронтенда.
+2. Попробуйте регистрацию и вход.
+3. В DevTools браузера проверьте, что API-запросы идут на URL Render-бэкенда, а не на localhost.
 
-## Notes
-- Free instances can sleep when idle. First request after idle can be slow.
-- DB migrations are run automatically on backend start (`db.Migrate(...)` in server startup).
+## Примечания
+- На бесплатном тарифе сервисы могут «засыпать» при простое. Первый запрос после простоя может быть медленным.
+- Миграции БД применяются автоматически при старте бэкенда (`db.Migrate(...)`).

@@ -41,6 +41,7 @@ export default function AdminUserPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [deletedCourses, setDeletedCourses] = useState<Course[]>([]);
@@ -56,7 +57,11 @@ export default function AdminUserPage() {
   const loadData = async () => {
     try {
       if (!id) return;
-      const data = await api.getAdminUserDetails(id);
+      const [{ user: sessionUser }, data] = await Promise.all([
+        api.getSession(),
+        api.getAdminUserDetails(id),
+      ]);
+      setCurrentUserId(sessionUser.id);
       setUser(data.user);
       setCourses(data.courses || []);
       setDeletedCourses(data.deletedCourses || []);
@@ -145,6 +150,17 @@ export default function AdminUserPage() {
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка восстановления курса");
+    }
+  };
+
+  const permanentlyDeleteCourse = async (courseId: string) => {
+    if (!window.confirm("Удалить курс окончательно без возможности восстановления?")) return;
+    try {
+      await api.permanentlyDeleteCourseAsAdmin(courseId);
+      toast.success("Курс удален окончательно");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка окончательного удаления курса");
     }
   };
 
@@ -298,7 +314,7 @@ export default function AdminUserPage() {
             <p className="text-muted-foreground">Публичный ID: {user.publicId}</p>
           </div>
           <div className="flex items-center gap-2">
-            {!user.blocked && (
+            {!user.blocked && user.id !== currentUserId && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive">Удалить пользователя</Button>
@@ -461,7 +477,12 @@ export default function AdminUserPage() {
                           {course.description}
                         </div>
                       </div>
-                      <Button onClick={() => restoreCourse(course.id)}>Восстановить</Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button onClick={() => restoreCourse(course.id)}>Восстановить</Button>
+                        <Button variant="destructive" onClick={() => permanentlyDeleteCourse(course.id)}>
+                          Удалить окончательно
+                        </Button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -473,4 +494,3 @@ export default function AdminUserPage() {
     </Layout>
   );
 }
-

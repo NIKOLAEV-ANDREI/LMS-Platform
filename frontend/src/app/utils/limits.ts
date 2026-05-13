@@ -33,8 +33,6 @@ export const LIMITS = {
   testTimeLimitMaxSec: 300 * 60,
   testTimeLimitMaxMin: 300,
   testRandomQuestionsMax: 100,
-  testQuestionDifficultyMin: 1,
-  testQuestionDifficultyMax: 5,
 };
 
 const lastWarningByKey = new Map<string, number>();

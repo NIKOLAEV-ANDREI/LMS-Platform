@@ -54,6 +54,10 @@ func (r *CourseRepo) Approve(courseID int64) error {
 	return err
 }
 
+func (r *CourseRepo) PermanentlyDeleteCourse(courseID int64) error {
+	return errors.New("not implemented")
+}
+
 func (r *CourseRepo) listByQuery(q string) ([]domain.Course, error) {
 	rows, err := r.db.Query(q)
 	if err != nil {

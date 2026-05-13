@@ -152,7 +152,7 @@ func (s *CourseService) GetCourseProgress(studentID, courseID int64) (*domain.Co
 	return s.enrollments.GetCourseProgress(studentID, courseID)
 }
 
-func (s *CourseService) StartLessonTestAttempt(studentID, courseID, lessonID int64, forceExtraAttempt bool) (*domain.LessonTestAttemptStart, error) {
+func (s *CourseService) StartLessonTestAttempt(studentID, courseID, lessonID int64) (*domain.LessonTestAttemptStart, error) {
 	course, lesson, err := s.getCourseLesson(courseID, lessonID)
 	if err != nil {
 		return nil, err
@@ -177,16 +177,24 @@ func (s *CourseService) StartLessonTestAttempt(studentID, courseID, lessonID int
 	}
 
 	settings := normalizeTestSettings(lesson.Test.Settings, len(lesson.Test.Questions))
+	if !settings.AllowRetakeAfterPass {
+		attemptHistory, err := s.enrollments.ListStudentLessonTestAttempts(studentID, courseID, lessonID)
+		if err != nil {
+			return nil, err
+		}
+		for _, attempt := range attemptHistory {
+			if attempt.Passed {
+				return nil, errors.New("test already passed")
+			}
+		}
+	}
 	attemptsUsed, err := s.enrollments.CountStudentLessonTestAttempts(studentID, lessonID)
 	if err != nil {
 		return nil, err
 	}
 	effectiveMaxAttempts := settings.MaxAttempts
-	if attemptsUsed >= settings.MaxAttempts && !forceExtraAttempt {
+	if attemptsUsed >= settings.MaxAttempts {
 		return nil, errors.New("test attempts limit reached")
-	}
-	if attemptsUsed >= settings.MaxAttempts && forceExtraAttempt {
-		effectiveMaxAttempts = attemptsUsed + 1
 	}
 
 	preparedQuestions, publicQuestions, err := buildAttemptQuestions(lesson.Test.Questions, settings)
@@ -220,6 +228,31 @@ func (s *CourseService) StartLessonTestAttempt(studentID, courseID, lessonID int
 		Questions:     publicQuestions,
 		StartedAt:     startedAt,
 	}, nil
+}
+
+func (s *CourseService) ResetStudentLessonTestResultsByTeacher(teacherID, courseID, lessonID, studentID int64) error {
+	course, lesson, err := s.getCourseLesson(courseID, lessonID)
+	if err != nil {
+		return err
+	}
+	if course.TeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	if lesson.Type != "test" || lesson.Test == nil {
+		return errors.New("lesson is not a test")
+	}
+	return s.enrollments.ResetStudentLessonTestResultsByTeacher(teacherID, courseID, lessonID, studentID)
+}
+
+func (s *CourseService) ResetStudentLessonTestResultsByAdmin(courseID, lessonID, studentID int64) error {
+	_, lesson, err := s.getCourseLesson(courseID, lessonID)
+	if err != nil {
+		return err
+	}
+	if lesson.Type != "test" || lesson.Test == nil {
+		return errors.New("lesson is not a test")
+	}
+	return s.enrollments.ResetStudentLessonTestResultsByAdmin(courseID, lessonID, studentID)
 }
 
 func (s *CourseService) SubmitLessonTestAttempt(studentID, courseID, lessonID, attemptID int64, answers []domain.LessonTestAnswer) (*domain.LessonTestAttemptSubmitResult, *domain.CourseProgress, error) {
@@ -646,6 +679,20 @@ func (s *CourseService) DeleteByAdmin(courseID int64) error {
 		return errors.New("course not found")
 	}
 	return s.courses.DeleteCourse(courseID)
+}
+
+func (s *CourseService) PermanentlyDeleteByAdmin(courseID int64) error {
+	course, err := s.courses.ByID(courseID)
+	if err != nil {
+		return err
+	}
+	if course == nil {
+		return errors.New("course not found")
+	}
+	if course.Status != "rejected" {
+		return errors.New("course must be in deleted status")
+	}
+	return s.courses.PermanentlyDeleteCourse(courseID)
 }
 
 func (s *CourseService) AddModuleByTeacher(teacherID, courseID int64, title, description string) (*domain.Module, error) {
@@ -1223,9 +1270,6 @@ func buildAttemptQuestions(source []domain.LessonQuestion, settings domain.Lesso
 		if clone.Type == "true_false" && len(clone.Options) == 0 {
 			clone.Options = []string{"Верно", "Неверно"}
 		}
-		if clone.Difficulty <= 0 {
-			clone.Difficulty = 3
-		}
 		questions = append(questions, clone)
 	}
 
@@ -1249,11 +1293,10 @@ func buildAttemptQuestions(source []domain.LessonQuestion, settings domain.Lesso
 	publicQuestions := make([]domain.LessonTestQuestionPublic, 0, len(questions))
 	for _, question := range questions {
 		publicQuestions = append(publicQuestions, domain.LessonTestQuestionPublic{
-			ID:         question.ID,
-			Type:       question.Type,
-			Question:   question.Question,
-			Options:    question.Options,
-			Difficulty: question.Difficulty,
+			ID:       question.ID,
+			Type:     question.Type,
+			Question: question.Question,
+			Options:  question.Options,
 		})
 	}
 
@@ -1402,7 +1445,6 @@ func buildLessonTestAnalytics(courseID, lessonID int64, sourceQuestions []domain
 		questionMeta[question.ID] = domain.LessonTestQuestionAnalytics{
 			QuestionID: question.ID,
 			Question:   question.Question,
-			Difficulty: question.Difficulty,
 		}
 	}
 

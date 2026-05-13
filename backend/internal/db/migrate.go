@@ -11,9 +11,13 @@ func Migrate(db *sql.DB) error {
 			password_hash TEXT NOT NULL,
 			role TEXT NOT NULL CHECK(role IN ('student','teacher','admin')),
 			blocked BOOLEAN NOT NULL DEFAULT FALSE,
-			avatar_url TEXT NOT NULL DEFAULT ''
+			avatar_url TEXT NOT NULL DEFAULT '',
+			created_by_admin_id BIGINT REFERENCES users(id)
 		);`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by_admin_id BIGINT REFERENCES users(id);`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_at TIMESTAMPTZ;`,
+		`UPDATE users SET blocked_at = NOW() WHERE blocked = TRUE AND blocked_at IS NULL;`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS public_id TEXT;`,
 		`UPDATE users
 		 SET public_id = md5(random()::text || clock_timestamp()::text || id::text)
@@ -125,6 +129,26 @@ func Migrate(db *sql.DB) error {
 		`ALTER TABLE lesson_test_attempts ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;`,
 		`CREATE INDEX IF NOT EXISTS lesson_test_attempts_lesson_student_idx ON lesson_test_attempts(lesson_id, student_id);`,
 		`CREATE INDEX IF NOT EXISTS lesson_test_attempts_course_idx ON lesson_test_attempts(course_id);`,
+		`CREATE TABLE IF NOT EXISTS admin_audit_logs (
+			id BIGSERIAL PRIMARY KEY,
+			actor_user_id BIGINT,
+			target_user_id BIGINT,
+			target_type TEXT NOT NULL DEFAULT '',
+			action TEXT NOT NULL,
+			result TEXT NOT NULL DEFAULT 'success',
+			details TEXT NOT NULL DEFAULT '',
+			ip TEXT NOT NULL DEFAULT '',
+			user_agent TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
+		`ALTER TABLE admin_audit_logs ALTER COLUMN actor_user_id DROP NOT NULL;`,
+		`ALTER TABLE admin_audit_logs ALTER COLUMN target_user_id DROP NOT NULL;`,
+		`ALTER TABLE admin_audit_logs ADD COLUMN IF NOT EXISTS target_type TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE admin_audit_logs ADD COLUMN IF NOT EXISTS result TEXT NOT NULL DEFAULT 'success';`,
+		`ALTER TABLE admin_audit_logs ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE admin_audit_logs ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT '';`,
+		`CREATE INDEX IF NOT EXISTS admin_audit_logs_actor_idx ON admin_audit_logs(actor_user_id, created_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS admin_audit_logs_target_idx ON admin_audit_logs(target_user_id, created_at DESC);`,
 	}
 
 	for _, q := range queries {

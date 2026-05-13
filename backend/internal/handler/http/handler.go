@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,10 +18,11 @@ type Handler struct {
 	auth   *service.AuthService
 	course *service.CourseService
 	admin  *service.AdminService
+	audit  *service.AuditService
 }
 
-func NewHandler(auth *service.AuthService, course *service.CourseService, admin *service.AdminService) *Handler {
-	return &Handler{auth: auth, course: course, admin: admin}
+func NewHandler(auth *service.AuthService, course *service.CourseService, admin *service.AdminService, audit *service.AuditService) *Handler {
+	return &Handler{auth: auth, course: course, admin: admin, audit: audit}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
@@ -71,6 +73,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/submissions", h.teacherCourseSubmissions)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Patch("/teacher/courses/{courseID}/submissions/{submissionID}", h.reviewLessonSubmission)
 			p.With(middleware.RequireRole(domain.RoleTeacher)).Get("/teacher/courses/{courseID}/lessons/{lessonID}/test/analytics", h.teacherLessonTestAnalytics)
+			p.With(middleware.RequireRole(domain.RoleTeacher)).Delete("/teacher/courses/{courseID}/lessons/{lessonID}/test/students/{studentID}/reset", h.resetStudentTestResultsByTeacher)
 
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/users", h.listUsers)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/users", h.createUserByAdmin)
@@ -78,6 +81,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/users/{id}", h.updateUserProfile)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/users/{id}/restore", h.restoreUser)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/users/{id}/block", h.blockUser)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/users/{id}/permanent", h.permanentlyDeleteUser)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/users/{id}/role", h.changeRole)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/courses", h.listAllCourses)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/courses/{id}/approve", h.approveCourse)
@@ -88,6 +92,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{id}/password", h.clearCoursePasswordByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{id}/restore", h.restoreCourseByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{id}", h.deleteCourseByAdmin)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{id}/permanent", h.permanentlyDeleteCourseByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Post("/admin/courses/{courseID}/modules", h.addModuleByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/courses/{courseID}/modules/{moduleID}", h.updateModuleByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{courseID}/modules/{moduleID}", h.deleteModuleByAdmin)
@@ -95,6 +100,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, jwtSecret string) {
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Patch("/admin/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.updateLessonByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{courseID}/modules/{moduleID}/lessons/{lessonID}", h.deleteLessonByAdmin)
 			p.With(middleware.RequireRole(domain.RoleAdmin)).Get("/admin/courses/{courseID}/lessons/{lessonID}/test/analytics", h.adminLessonTestAnalytics)
+			p.With(middleware.RequireRole(domain.RoleAdmin)).Delete("/admin/courses/{courseID}/lessons/{lessonID}/test/students/{studentID}/reset", h.resetStudentTestResultsByAdmin)
 		})
 	})
 }
@@ -127,14 +133,17 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logAudit(r, nil, "auth", nil, "login", "error", "invalid json")
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 	token, user, err := h.auth.Login(req.Email, req.Password)
 	if err != nil {
+		h.logAudit(r, nil, "auth", nil, "login", "denied", "email="+strings.TrimSpace(strings.ToLower(req.Email))+";reason="+err.Error())
 		writeErr(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+	h.logAudit(r, &user.ID, "user", &user.ID, "login", "success", "email="+strings.TrimSpace(strings.ToLower(req.Email)))
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": user})
 }
 
@@ -257,9 +266,11 @@ func (h *Handler) publishCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.course.PublishByTeacher(teacherID, courseID); err != nil {
+		h.logAudit(r, &teacherID, "course", &courseID, "teacher_publish_course", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &teacherID, "course", &courseID, "teacher_publish_course", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
 }
 
@@ -271,9 +282,11 @@ func (h *Handler) unpublishCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.course.UnpublishByTeacher(teacherID, courseID); err != nil {
+		h.logAudit(r, &teacherID, "course", &courseID, "teacher_unpublish_course", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &teacherID, "course", &courseID, "teacher_unpublish_course", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unpublished"})
 }
 
@@ -285,9 +298,11 @@ func (h *Handler) deleteCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.course.DeleteByTeacher(teacherID, courseID); err != nil {
+		h.logAudit(r, &teacherID, "course", &courseID, "teacher_delete_course", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &teacherID, "course", &courseID, "teacher_delete_course", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -529,18 +544,7 @@ func (h *Handler) startLessonTestAttempt(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "invalid lesson id")
 		return
 	}
-	var req struct {
-		ForceExtraAttempt bool `json:"forceExtraAttempt"`
-	}
-	if r.Body != nil {
-		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-			writeErr(w, http.StatusBadRequest, "invalid json")
-			return
-		}
-	}
-
-	attempt, err := h.course.StartLessonTestAttempt(studentID, courseID, lessonID, req.ForceExtraAttempt)
+	attempt, err := h.course.StartLessonTestAttempt(studentID, courseID, lessonID)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -701,9 +705,11 @@ func (h *Handler) reviewLessonSubmission(w http.ResponseWriter, r *http.Request)
 
 	submission, progress, err := h.course.ReviewLessonSubmissionByTeacher(teacherID, courseID, submissionID, action == "approve", req.ReviewNote)
 	if err != nil {
+		h.logAudit(r, &teacherID, "submission", &submissionID, "teacher_review_submission_"+action, "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &teacherID, "submission", &submissionID, "teacher_review_submission_"+action, "success", "")
 
 	resp := map[string]any{"submission": submission}
 	if progress != nil {
@@ -759,6 +765,55 @@ func (h *Handler) adminLessonTestAnalytics(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (h *Handler) resetStudentTestResultsByTeacher(w http.ResponseWriter, r *http.Request) {
+	teacherID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+	studentID, err := h.resolveUserID(r, "studentID")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	if err := h.course.ResetStudentLessonTestResultsByTeacher(teacherID, courseID, lessonID, studentID); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
+}
+
+func (h *Handler) resetStudentTestResultsByAdmin(w http.ResponseWriter, r *http.Request) {
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "courseID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	lessonID, err := strconv.ParseInt(chi.URLParam(r, "lessonID"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid lesson id")
+		return
+	}
+	studentID, err := h.resolveUserID(r, "studentID")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	if err := h.course.ResetStudentLessonTestResultsByAdmin(courseID, lessonID, studentID); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
+}
+
 func (h *Handler) listUsers(w http.ResponseWriter, _ *http.Request) {
 	users, err := h.admin.ListUsers()
 	if err != nil {
@@ -769,6 +824,7 @@ func (h *Handler) listUsers(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) createUserByAdmin(w http.ResponseWriter, r *http.Request) {
+	creatorAdminID := middleware.UserIDFromContext(r.Context())
 	var req struct {
 		Name     string      `json:"name"`
 		Email    string      `json:"email"`
@@ -780,7 +836,7 @@ func (h *Handler) createUserByAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.admin.CreateUser(req.Name, req.Email, req.Password, req.Role)
+	user, err := h.admin.CreateUser(req.Name, req.Email, req.Password, req.Role, &creatorAdminID)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -865,10 +921,13 @@ func (h *Handler) restoreUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
+	actorID := middleware.UserIDFromContext(r.Context())
 	if err := h.admin.BlockUser(id, false); err != nil {
+		h.logAudit(r, &actorID, "user", &id, "admin_restore_user", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &actorID, "user", &id, "admin_restore_user", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 }
 
@@ -885,11 +944,56 @@ func (h *Handler) blockUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	currentUserID := middleware.UserIDFromContext(r.Context())
+	if req.Blocked && id == currentUserID {
+		h.logAudit(r, &currentUserID, "user", &id, "admin_block_user", "denied", "cannot block own user")
+		writeErr(w, http.StatusForbidden, "cannot block own user")
+		return
+	}
 	if err := h.admin.BlockUser(id, req.Blocked); err != nil {
+		action := "admin_restore_user"
+		if req.Blocked {
+			action = "admin_block_user"
+		}
+		h.logAudit(r, &currentUserID, "user", &id, action, "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	action := "admin_restore_user"
+	if req.Blocked {
+		action = "admin_block_user"
+	}
+	h.logAudit(r, &currentUserID, "user", &id, action, "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (h *Handler) permanentlyDeleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := h.resolveUserID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	var req struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if strings.ToUpper(strings.TrimSpace(req.Confirmation)) != "DELETE" {
+		writeErr(w, http.StatusBadRequest, "invalid permanent delete confirmation")
+		return
+	}
+
+	currentUserID := middleware.UserIDFromContext(r.Context())
+	if err := h.admin.PermanentlyDeleteUser(currentUserID, id); err != nil {
+		h.logAudit(r, &currentUserID, "user", &id, "admin_permanently_delete_user", "denied", err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.logAudit(r, &currentUserID, "user", &id, "admin_permanently_delete_user", "success", "")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "permanently_deleted"})
 }
 
 func (h *Handler) changeRole(w http.ResponseWriter, r *http.Request) {
@@ -900,7 +1004,22 @@ func (h *Handler) changeRole(w http.ResponseWriter, r *http.Request) {
 	}
 	currentUserID := middleware.UserIDFromContext(r.Context())
 	if id == currentUserID {
+		h.logAudit(r, &currentUserID, "user", &id, "admin_change_role", "denied", "cannot change own role")
 		writeErr(w, http.StatusForbidden, "cannot change own role")
+		return
+	}
+	currentUser, err := h.admin.UserByID(currentUserID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if currentUser == nil {
+		writeErr(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+	if currentUser.CreatedByAdminID != nil && *currentUser.CreatedByAdminID == id {
+		h.logAudit(r, &currentUserID, "user", &id, "admin_change_role", "denied", "cannot change creator admin role")
+		writeErr(w, http.StatusForbidden, "cannot change creator admin role")
 		return
 	}
 	var req struct {
@@ -911,9 +1030,11 @@ func (h *Handler) changeRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.admin.SetRole(id, req.Role); err != nil {
+		h.logAudit(r, &currentUserID, "user", &id, "admin_change_role", "denied", err.Error()+";new_role="+string(req.Role))
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &currentUserID, "user", &id, "admin_change_role", "success", "new_role="+string(req.Role))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -962,28 +1083,34 @@ func (h *Handler) updateCourseByAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) publishCourseByAdmin(w http.ResponseWriter, r *http.Request) {
+	actorID := middleware.UserIDFromContext(r.Context())
 	courseID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid course id")
 		return
 	}
 	if err := h.course.PublishByAdmin(courseID); err != nil {
+		h.logAudit(r, &actorID, "course", &courseID, "admin_publish_course", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &actorID, "course", &courseID, "admin_publish_course", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
 }
 
 func (h *Handler) unpublishCourseByAdmin(w http.ResponseWriter, r *http.Request) {
+	actorID := middleware.UserIDFromContext(r.Context())
 	courseID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid course id")
 		return
 	}
 	if err := h.course.UnpublishByAdmin(courseID); err != nil {
+		h.logAudit(r, &actorID, "course", &courseID, "admin_unpublish_course", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &actorID, "course", &courseID, "admin_unpublish_course", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unpublished"})
 }
 
@@ -1069,16 +1196,35 @@ func (h *Handler) restoreCourseByAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteCourseByAdmin(w http.ResponseWriter, r *http.Request) {
+	actorID := middleware.UserIDFromContext(r.Context())
 	courseID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid course id")
 		return
 	}
 	if err := h.course.DeleteByAdmin(courseID); err != nil {
+		h.logAudit(r, &actorID, "course", &courseID, "admin_delete_course", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.logAudit(r, &actorID, "course", &courseID, "admin_delete_course", "success", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *Handler) permanentlyDeleteCourseByAdmin(w http.ResponseWriter, r *http.Request) {
+	actorID := middleware.UserIDFromContext(r.Context())
+	courseID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid course id")
+		return
+	}
+	if err := h.course.PermanentlyDeleteByAdmin(courseID); err != nil {
+		h.logAudit(r, &actorID, "course", &courseID, "admin_permanently_delete_course", "denied", err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.logAudit(r, &actorID, "course", &courseID, "admin_permanently_delete_course", "success", "")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "permanently_deleted"})
 }
 
 func (h *Handler) addModule(w http.ResponseWriter, r *http.Request) {
@@ -1441,6 +1587,35 @@ func (h *Handler) resolveUserID(r *http.Request, param string) (int64, error) {
 		return 0, strconv.ErrSyntax
 	}
 	return user.ID, nil
+}
+
+func (h *Handler) logAudit(r *http.Request, actorUserID *int64, targetType string, targetID *int64, action, result, details string) {
+	if h.audit == nil || r == nil {
+		return
+	}
+	_ = h.audit.Log(actorUserID, targetType, targetID, action, result, details, clientIPFromRequest(r), r.UserAgent())
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	xForwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if xForwardedFor != "" {
+		parts := strings.Split(xForwardedFor, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	xRealIP := strings.TrimSpace(r.Header.Get("X-Real-IP"))
+	if xRealIP != "" {
+		return xRealIP
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func writeJSON(w http.ResponseWriter, code int, payload any) {

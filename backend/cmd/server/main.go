@@ -40,13 +40,17 @@ func main() {
 	userRepo := postgresRepo.NewUserRepo(database)
 	courseRepo := postgresRepo.NewCourseRepo(database)
 	enrollmentRepo := postgresRepo.NewEnrollmentRepo(database)
+	auditRepo := postgresRepo.NewAuditRepo(database)
 
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
 	courseService := service.NewCourseService(courseRepo, enrollmentRepo)
 	adminService := service.NewAdminService(userRepo, courseRepo)
+	auditService := service.NewAuditService(auditRepo)
 
-	h := httpHandler.NewHandler(authService, courseService, adminService)
+	h := httpHandler.NewHandler(authService, courseService, adminService, auditService)
 	r := chi.NewRouter()
+	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.NewDefaultRateLimiter().Middleware())
 	r.Use(middleware.CORS(cfg.AllowedOrigin))
 	h.RegisterRoutes(r, cfg.JWTSecret)
 

@@ -361,7 +361,7 @@ export default function Profile() {
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Профиль пользователя</CardTitle>
-            <CardDescription>Управление личными данными.</CardDescription>
+            <CardDescription>Управление личными данными</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-col gap-6 md:flex-row md:items-start">

@@ -39,6 +39,9 @@ export default function AdminDashboard() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
+  const [permanentDeleteUser, setPermanentDeleteUser] = useState<User | null>(null);
+  const [permanentDeleteConfirmation, setPermanentDeleteConfirmation] = useState("");
+  const [permanentlyDeletingUser, setPermanentlyDeletingUser] = useState(false);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -82,6 +85,10 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if (userId === currentUserId) {
+      toast.error("Нельзя удалить аккаунт, под которым вы сейчас авторизованы");
+      return;
+    }
     try {
       await api.deleteUser(userId);
       toast.success("Пользователь удален");
@@ -98,6 +105,29 @@ export default function AdminDashboard() {
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка восстановления пользователя");
+    }
+  };
+
+  const handlePermanentlyDeleteUser = async () => {
+    if (!permanentDeleteUser || permanentlyDeletingUser) {
+      return;
+    }
+    if (permanentDeleteConfirmation.trim().toUpperCase() !== "DELETE") {
+      toast.error("Введите DELETE для подтверждения");
+      return;
+    }
+
+    try {
+      setPermanentlyDeletingUser(true);
+      await api.permanentlyDeleteUser(permanentDeleteUser.publicId || permanentDeleteUser.id, "DELETE");
+      toast.success("Пользователь удален окончательно");
+      setPermanentDeleteUser(null);
+      setPermanentDeleteConfirmation("");
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Ошибка окончательного удаления пользователя");
+    } finally {
+      setPermanentlyDeletingUser(false);
     }
   };
 
@@ -195,6 +225,56 @@ export default function AdminDashboard() {
   return (
     <Layout>
       <div className="space-y-6">
+        <Dialog
+          open={Boolean(permanentDeleteUser)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPermanentDeleteUser(null);
+              setPermanentDeleteConfirmation("");
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Окончательно удалить пользователя?</DialogTitle>
+              <DialogDescription>
+                {permanentDeleteUser
+                  ? `Пользователь: ${permanentDeleteUser.name} (${permanentDeleteUser.email})`
+                  : "Это действие необратимо."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="permanent-delete-confirm">Введите DELETE для подтверждения</Label>
+              <Input
+                id="permanent-delete-confirm"
+                value={permanentDeleteConfirmation}
+                onChange={(event) => setPermanentDeleteConfirmation(event.target.value)}
+                placeholder="DELETE"
+                autoComplete="off"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPermanentDeleteUser(null);
+                  setPermanentDeleteConfirmation("");
+                }}
+                disabled={permanentlyDeletingUser}
+              >
+                Отмена
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handlePermanentlyDeleteUser}
+                disabled={permanentlyDeletingUser || permanentDeleteConfirmation.trim().toUpperCase() !== "DELETE"}
+              >
+                {permanentlyDeletingUser ? "Удаление..." : "Удалить навсегда"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div>
           <div>
             <h1 className="text-3xl font-bold">Панель администратора</h1>
@@ -432,7 +512,7 @@ export default function AdminDashboard() {
                         {usersTab === "active" ? (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" className="text-destructive">
+                              <Button variant="ghost" size="sm" className="text-destructive" disabled={user.id === currentUserId}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </AlertDialogTrigger>
@@ -450,9 +530,22 @@ export default function AdminDashboard() {
                             </AlertDialogContent>
                           </AlertDialog>
                         ) : (
-                          <Button variant="ghost" size="sm" onClick={() => handleRestoreUser(user.publicId || user.id)}>
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => handleRestoreUser(user.publicId || user.id)}>
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive"
+                              onClick={() => {
+                                setPermanentDeleteUser(user);
+                                setPermanentDeleteConfirmation("");
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>

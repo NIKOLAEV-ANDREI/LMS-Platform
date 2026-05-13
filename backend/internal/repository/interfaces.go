@@ -9,6 +9,8 @@ type UserRepository interface {
 	ByPublicID(publicID string) (*domain.User, error)
 	List() ([]domain.User, error)
 	SetBlocked(id int64, blocked bool) error
+	GetPermanentDeleteConstraints(id int64) (*domain.UserPermanentDeleteConstraints, error)
+	PermanentlyDeleteWithAudit(targetUserID, actorUserID int64, action, details string) error
 	SetRole(id int64, role domain.Role) error
 	UpdateProfile(id int64, name, email string) error
 	SetPasswordHash(id int64, passwordHash string) error
@@ -27,6 +29,7 @@ type CourseRepository interface {
 	SetStatus(courseID int64, status string) error
 	UpdateCourse(course *domain.Course) error
 	DeleteCourse(courseID int64) error
+	PermanentlyDeleteCourse(courseID int64) error
 	AddModule(module *domain.Module) error
 	UpdateModule(module *domain.Module) error
 	DeleteModule(moduleID int64) error
@@ -57,4 +60,10 @@ type EnrollmentRepository interface {
 	ListStudentLessonTestAttempts(studentID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error)
 	ListTeacherLessonTestAttempts(teacherID, courseID, lessonID int64) ([]domain.LessonTestAttempt, error)
 	ListAdminLessonTestAttempts(courseID, lessonID int64) ([]domain.LessonTestAttempt, error)
+	ResetStudentLessonTestResultsByTeacher(teacherID, courseID, lessonID, studentID int64) error
+	ResetStudentLessonTestResultsByAdmin(courseID, lessonID, studentID int64) error
+}
+
+type AuditRepository interface {
+	Create(entry *domain.AdminAuditLog) error
 }

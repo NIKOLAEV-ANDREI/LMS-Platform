@@ -27,7 +27,7 @@ export default function Register() {
       return;
     }
     if (role === "teacher" && teacherAccessPassword.trim() !== TEACHER_ACCESS_PASSWORD) {
-      toast.error("Неверный пароль-разрешение для регистрации преподавателя");
+      toast.error("Неверный код доступа преподавателя");
       return;
     }
 
@@ -133,13 +133,13 @@ export default function Register() {
 
             {role === "teacher" && (
               <div className="space-y-2">
-                <Label htmlFor="teacher-access-password">Пароль-разрешение преподавателя</Label>
+                <Label htmlFor="teacher-access-password">Код доступа преподавателя</Label>
                 <Input
                   id="teacher-access-password"
                   type="password"
-                  placeholder="Введите пароль-разрешение"
+                  placeholder="Введите код доступа"
                   value={teacherAccessPassword}
-                  onChange={(event) => setTeacherAccessPassword(applyTextLimit(event.target.value, 20, "Пароль-разрешение"))}
+                  onChange={(event) => setTeacherAccessPassword(applyTextLimit(event.target.value, 20, "Код доступа"))}
                   required
                 />
               </div>

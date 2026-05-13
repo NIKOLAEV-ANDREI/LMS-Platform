@@ -107,6 +107,14 @@ func (r *UserRepo) SetBlocked(id int64, blocked bool) error {
 	return err
 }
 
+func (r *UserRepo) GetPermanentDeleteConstraints(id int64) (*domain.UserPermanentDeleteConstraints, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *UserRepo) PermanentlyDeleteWithAudit(targetUserID, actorUserID int64, action, details string) error {
+	return errors.New("not implemented")
+}
+
 func (r *UserRepo) SetRole(id int64, role domain.Role) error {
 	_, err := r.db.Exec(`UPDATE users SET role = ? WHERE id = ?`, role, id)
 	return err

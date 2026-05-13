@@ -52,10 +52,10 @@ export default function LessonViewer() {
   const [attemptHistory, setAttemptHistory] = useState<LessonTestAttemptHistoryItem[]>([]);
   const [teacherTestAnalytics, setTeacherTestAnalytics] = useState<LessonTestAnalytics | null>(null);
   const [teacherTestAttempts, setTeacherTestAttempts] = useState<LessonTestAttemptHistoryItem[]>([]);
+  const [resettingStudentId, setResettingStudentId] = useState<string | null>(null);
   const [submittingTest, setSubmittingTest] = useState(false);
   const [startingTest, setStartingTest] = useState(false);
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
-  const [forceExtraAttempt, setForceExtraAttempt] = useState(false);
   const [timeExpiredScreen, setTimeExpiredScreen] = useState(false);
   const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState<"all" | "passed" | "failed">("all");
   const [nowTick, setNowTick] = useState(Date.now());
@@ -113,7 +113,6 @@ export default function LessonViewer() {
       setTestResult(null);
       setTestAnswers({});
       setStartConfirmOpen(false);
-      setForceExtraAttempt(false);
       setTimeExpiredScreen(false);
       setAnalyticsStudentFilter("all");
       setAttemptHistory([]);
@@ -172,18 +171,17 @@ export default function LessonViewer() {
     }
   };
 
-  const startTestAttempt = async (useExtraAttempt = false) => {
+  const startTestAttempt = async () => {
     if (!courseId || !lessonId) return;
     setStartingTest(true);
     try {
-      const { attempt } = await api.startLessonTest(courseId, lessonId, { forceExtraAttempt: useExtraAttempt });
+      const { attempt } = await api.startLessonTest(courseId, lessonId);
       setActiveAttempt(attempt);
       setTestAnswers({});
       setTestSubmitted(false);
       setTestResult(null);
       setTimeExpiredScreen(false);
       setStartConfirmOpen(false);
-      setForceExtraAttempt(false);
     } catch (error: any) {
       toast.error(error.message || "Не удалось начать тест");
     } finally {
@@ -423,6 +421,32 @@ export default function LessonViewer() {
     return `${minutes} мин ${secs} сек`;
   };
 
+  const handleResetStudentTestResult = async (studentId: string, studentName: string) => {
+    if (!courseId || !lessonId || !user) return;
+    const ok = window.confirm(`Сбросить результаты теста для студента "${studentName}"?`);
+    if (!ok) return;
+
+    setResettingStudentId(studentId);
+    try {
+      if (user.role === "admin") {
+        await api.resetStudentLessonTestResultsByAdmin(courseId, lessonId, studentId);
+        const { analytics, attempts } = await api.getAdminLessonTestAnalytics(courseId, lessonId);
+        setTeacherTestAnalytics(analytics);
+        setTeacherTestAttempts(attempts);
+      } else {
+        await api.resetStudentLessonTestResultsByTeacher(courseId, lessonId, studentId);
+        const { analytics, attempts } = await api.getTeacherLessonTestAnalytics(courseId, lessonId);
+        setTeacherTestAnalytics(analytics);
+        setTeacherTestAttempts(attempts);
+      }
+      toast.success("Результаты студента сброшены");
+    } catch (error: any) {
+      toast.error(error.message || "Не удалось сбросить результаты студента");
+    } finally {
+      setResettingStudentId(null);
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -456,7 +480,11 @@ export default function LessonViewer() {
   const testMaxAttempts = activeAttempt?.maxAttempts ?? lesson.test?.settings?.maxAttempts ?? 0;
   const attemptsUsed = activeAttempt?.attemptNumber ?? attemptHistory[0]?.attemptNumber ?? attemptHistory.length;
   const attemptsLeft = testMaxAttempts > 0 ? Math.max(testMaxAttempts - attemptsUsed, 0) : 0;
+  const hasPassedAttempt = attemptHistory.some((attempt) => attempt.passed);
+  const allowRetakeAfterPass = Boolean(lesson.test?.settings?.allowRetakeAfterPass);
+  const startBlockedByPassed = hasPassedAttempt && !allowRetakeAfterPass;
   const startBlockedByLimit = testMaxAttempts > 0 && attemptsLeft === 0;
+  const startBlocked = startBlockedByLimit || startBlockedByPassed;
   const isTimeOver = Boolean(activeAttempt && activeAttempt.timeLimitSec > 0 && remainingTimeSec === 0);
   const filteredAnalyticsStudents = (() => {
     const items = teacherTestAnalytics?.students || [];
@@ -623,6 +651,11 @@ export default function LessonViewer() {
                               : "Запустите тест, чтобы начать попытку"}
                           </p>
                           {startBlockedByLimit && <p className="text-sm text-destructive">Лимит попыток исчерпан.</p>}
+                          {startBlockedByPassed && (
+                            <p className="text-sm text-green-700">
+                              Тест уже пройден. Повторное прохождение отключено преподавателем.
+                            </p>
+                          )}
                           {!activeAttempt && lesson.test?.settings?.timeLimitSec > 0 && (
                             <p className="text-sm text-muted-foreground">
                               Время на попытку: {formatDuration(lesson.test.settings.timeLimitSec)}
@@ -631,26 +664,11 @@ export default function LessonViewer() {
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
-                            onClick={() => {
-                              setForceExtraAttempt(false);
-                              setStartConfirmOpen(true);
-                            }}
-                            disabled={startingTest || Boolean(activeAttempt) || startBlockedByLimit}
+                            onClick={() => setStartConfirmOpen(true)}
+                            disabled={startingTest || Boolean(activeAttempt) || startBlocked}
                           >
                             {startingTest ? "Запуск..." : activeAttempt ? "Попытка запущена" : "Начать тест"}
                           </Button>
-                          {startBlockedByLimit && !activeAttempt && (
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setForceExtraAttempt(true);
-                                setStartConfirmOpen(true);
-                              }}
-                              disabled={startingTest}
-                            >
-                              +1 попытка
-                            </Button>
-                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -659,36 +677,27 @@ export default function LessonViewer() {
 
                 <AlertDialog
                   open={startConfirmOpen}
-                  onOpenChange={(open) => {
-                    setStartConfirmOpen(open);
-                    if (!open) {
-                      setForceExtraAttempt(false);
-                    }
-                  }}
+                  onOpenChange={setStartConfirmOpen}
                 >
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>{forceExtraAttempt ? "Добавить попытку и начать тест?" : "Начать попытку теста?"}</AlertDialogTitle>
+                      <AlertDialogTitle>Начать попытку теста?</AlertDialogTitle>
                       <AlertDialogDescription>
                         {lesson.test?.settings?.timeLimitSec > 0
                           ? `На прохождение теста выделено ${formatDuration(lesson.test.settings.timeLimitSec)}.`
                           : "У этого теста нет ограничения по времени."}{" "}
-                        {forceExtraAttempt
-                          ? "Лимит попыток исчерпан, но сейчас будет добавлена дополнительная попытка."
-                          : "После старта попытка сразу начинает отсчёт времени."}
+                        После старта попытка сразу начинает отсчёт времени.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-1 text-sm text-muted-foreground">
                       {testMaxAttempts > 0 && <p>Попыток доступно: {attemptsLeft} из {testMaxAttempts}</p>}
+                      {startBlockedByPassed && <p>Повтор после успешной сдачи: отключен</p>}
                       <p>Вопросов в попытке: {lesson.test?.settings?.randomQuestionCount || lesson.test?.questions.length || 0}</p>
                     </div>
                     <AlertDialogFooter>
                       <AlertDialogCancel disabled={startingTest}>Отмена</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => startTestAttempt(forceExtraAttempt)}
-                        disabled={startingTest || (startBlockedByLimit && !forceExtraAttempt)}
-                      >
-                        {startingTest ? "Запуск..." : forceExtraAttempt ? "Добавить и начать" : "Начать"}
+                      <AlertDialogAction onClick={() => startTestAttempt()} disabled={startingTest || startBlocked}>
+                        {startingTest ? "Запуск..." : "Начать"}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -854,20 +863,33 @@ export default function LessonViewer() {
                         )}
                         {filteredAnalyticsStudents.map((item) => (
                           <div key={item.studentId} className="rounded-md border p-2">
-                            <p>{item.studentName} ({item.studentEmail})</p>
-                            <p className="text-xs text-muted-foreground">
-                              Лучший балл: {item.bestScore}% | Последний: {item.lastScore}% | Попытки: {item.attemptsUsed}
-                            </p>
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p>{item.studentName} ({item.studentEmail})</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Лучший балл: {item.bestScore}% | Последний: {item.lastScore}% | Попытки: {item.attemptsUsed}
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleResetStudentTestResult(item.studentId, item.studentName || "Студент")}
+                                disabled={resettingStudentId === item.studentId || item.attemptsUsed <= 0}
+                              >
+                                {resettingStudentId === item.studentId ? "Сброс..." : "Сбросить результат"}
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
                       <div className="space-y-2">
-                        <p className="font-medium">Сложность вопросов</p>
+                        <p className="font-medium">Статистика по вопросам</p>
                         {teacherTestAnalytics.questions.map((item) => (
                           <div key={item.questionId} className="rounded-md border p-2">
                             <p>{item.question}</p>
                             <p className="text-xs text-muted-foreground">
-                              Сложность: {item.difficulty} | Верных: {item.correctCount}/{item.timesShown} ({item.correctRate}%)
+                              Верных: {item.correctCount}/{item.timesShown} ({item.correctRate}%)
                             </p>
                           </div>
                         ))}

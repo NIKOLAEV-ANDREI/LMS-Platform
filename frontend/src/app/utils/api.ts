@@ -7,6 +7,7 @@ export interface User {
   name: string;
   role: 'student' | 'teacher' | 'admin';
   blocked?: boolean;
+  blockedAt?: string;
   avatarUrl?: string;
   enrolledCourses: string[];
   createdCourses: string[];
@@ -89,13 +90,13 @@ export interface Question {
   correctAnswer?: number;
   correctAnswers?: number[];
   correctText?: string;
-  difficulty?: number;
 }
 
 export interface TestSettings {
   timeLimitSec: number;
   passScore: number;
   maxAttempts: number;
+  allowRetakeAfterPass: boolean;
   randomQuestionCount: number;
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
@@ -107,7 +108,6 @@ export interface LessonTestQuestionPublic {
   type: 'single' | 'multiple' | 'open' | 'true_false';
   question: string;
   options: string[];
-  difficulty: number;
 }
 
 export interface LessonTestAnswer {
@@ -177,7 +177,6 @@ export interface LessonTestStudentStat {
 export interface LessonTestQuestionAnalytics {
   questionId: string;
   question: string;
-  difficulty: number;
   timesShown: number;
   correctCount: number;
   correctRate: number;
@@ -255,6 +254,7 @@ class API {
     { test: /invalid token claims/i, value: 'Некорректные данные токена' },
     { test: /token has invalid claims/i, value: 'Срок действия сессии истек, войдите снова' },
     { test: /token is expired/i, value: 'Срок действия сессии истек, войдите снова' },
+    { test: /rate limit exceeded/i, value: 'Слишком много запросов. Попробуйте снова позже' },
     { test: /role not found/i, value: 'Роль пользователя не определена' },
     { test: /invalid email format/i, value: 'Некорректный формат email' },
     { test: /email already exists/i, value: 'Пользователь с таким email уже существует' },
@@ -264,6 +264,7 @@ class API {
     { test: /invalid role/i, value: 'Некорректная роль пользователя' },
     { test: /user not found/i, value: 'Пользователь не найден' },
     { test: /course not found/i, value: 'Курс не найден' },
+    { test: /course must be in deleted status/i, value: 'Окончательно удалить можно только курс из раздела удаленных' },
     { test: /invalid user id/i, value: 'Некорректный ID пользователя' },
     { test: /invalid course id/i, value: 'Некорректный ID курса' },
     { test: /invalid module id/i, value: 'Некорректный ID модуля' },
@@ -288,18 +289,30 @@ class API {
     { test: /invalid review action/i, value: 'Некорректное действие проверки работы' },
     { test: /review note/i, value: 'Комментарий преподавателя слишком длинный' },
     { test: /cannot change own role/i, value: 'Свою роль менять нельзя' },
+    { test: /cannot block own user/i, value: 'Нельзя удалить аккаунт, под которым вы сейчас авторизованы' },
+    { test: /cannot change creator admin role/i, value: 'Нельзя менять роль администратора, который создал ваш аккаунт' },
+    { test: /invalid permanent delete confirmation/i, value: 'Подтвердите удаление словом DELETE' },
+    { test: /cannot permanently delete own user/i, value: 'Нельзя окончательно удалить аккаунт, под которым вы сейчас авторизованы' },
+    { test: /cannot permanently delete creator admin/i, value: 'Нельзя удалить администратора, который создал ваш аккаунт' },
+    { test: /user must be blocked before permanent delete/i, value: 'Окончательное удаление доступно только во вкладке удалённых пользователей' },
+    { test: /cannot permanently delete user with active courses/i, value: 'Сначала снимите с пользователя все активные курсы' },
+    { test: /cannot permanently delete user with deleted courses/i, value: 'Сначала удалите окончательно курсы пользователя из раздела удалённых курсов' },
+    { test: /cannot permanently delete user with enrollments/i, value: 'Сначала удалите записи пользователя на курсы' },
+    { test: /cannot permanently delete user with pending teacher submissions/i, value: 'У пользователя есть непроверенные работы студентов' },
+    { test: /cannot permanently delete user with pending student submissions/i, value: 'У пользователя есть работы на проверке у преподавателя' },
+    { test: /cannot permanently delete user with dependent admins/i, value: 'Сначала переназначьте или удалите администраторов, созданных этим пользователем' },
     { test: /forbidden:\s*course does not belong to teacher/i, value: 'Недостаточно прав: курс не принадлежит этому преподавателю' },
     { test: /test lesson must have at least one question/i, value: 'Тестовый урок должен содержать минимум один вопрос' },
     { test: /question (\d+) type must be single, multiple, open or true_false/i, value: 'Укажите корректный тип вопроса (single, multiple, open или true_false)' },
     { test: /question (\d+) options count must be \d+\.\.\d+/i, value: 'В вопросе указано недопустимое количество вариантов ответа' },
     { test: /question (\d+) must have at least 1 correct option/i, value: 'Для вопроса с множественным выбором нужен минимум один правильный вариант' },
     { test: /question (\d+) has invalid correct (option )?index/i, value: 'В вопросе указан некорректный индекс правильного ответа' },
-    { test: /question (\d+) difficulty must be \d+\.\.\d+/i, value: 'Некорректный уровень сложности вопроса' },
     { test: /test pass score must be \d+\.\.\d+/i, value: 'Проходной балл теста указан неверно' },
     { test: /test max attempts must be \d+\.\.\d+/i, value: 'Количество попыток теста указано неверно' },
     { test: /test random question count must be \d+\.\.\d+/i, value: 'Количество вопросов в выборке указано неверно' },
     { test: /test time limit must be 0\.\.\d+ seconds/i, value: 'Ограничение времени теста указано неверно' },
     { test: /test attempts limit reached/i, value: 'Лимит попыток для этого теста исчерпан' },
+    { test: /test already passed/i, value: 'Тест уже пройден. Повторное прохождение отключено преподавателем' },
     { test: /test time is over/i, value: 'Время прохождения теста истекло' },
     { test: /test attempt not found/i, value: 'Попытка теста не найдена' },
     { test: /test attempt already submitted/i, value: 'Эта попытка теста уже отправлена' },
@@ -369,6 +382,11 @@ class API {
     match = message.match(/^question (\d+) options count must be (\d+)\.\.(\d+)$/i);
     if (match) {
       return `Вопрос №${match[1]}: количество вариантов должно быть от ${match[2]} до ${match[3]}`;
+    }
+
+    match = message.match(/^user permanent delete cooldown active \(days_left=(\d+)\)$/i);
+    if (match) {
+      return `Окончательное удаление будет доступно через ${match[1]} дн.`;
     }
 
     match = message.match(/^forbidden:\s*(.+)$/i);
@@ -451,6 +469,7 @@ class API {
       name: raw.name,
       role: raw.role,
       blocked: Boolean(raw.blocked),
+      blockedAt: raw.blocked_at || raw.blockedAt || undefined,
       avatarUrl: raw.avatar_url || raw.avatarUrl || '',
       enrolledCourses: prev?.enrolledCourses ?? [],
       createdCourses: prev?.createdCourses ?? [],
@@ -490,6 +509,7 @@ class API {
                             timeLimitSec: Number(l.test.settings.timeLimitSec ?? 0),
                             passScore: Number(l.test.settings.passScore ?? 70),
                             maxAttempts: Number(l.test.settings.maxAttempts ?? 3),
+                            allowRetakeAfterPass: Boolean(l.test.settings.allowRetakeAfterPass),
                             randomQuestionCount: Number(l.test.settings.randomQuestionCount ?? l.test.questions.length ?? 0),
                             shuffleQuestions: Boolean(l.test.settings.shuffleQuestions),
                             shuffleOptions: Boolean(l.test.settings.shuffleOptions),
@@ -504,7 +524,6 @@ class API {
                         correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : undefined,
                         correctAnswers: Array.isArray(q.correctAnswers) ? q.correctAnswers.map((item: any) => Number(item)) : undefined,
                         correctText: typeof q.correctText === 'string' ? q.correctText : undefined,
-                        difficulty: typeof q.difficulty === 'number' ? q.difficulty : 3,
                       })),
                     }
                   : undefined,
@@ -589,7 +608,6 @@ class API {
         ? raw.questions.map((item: any) => ({
             questionId: String(item.question_id ?? item.questionId ?? ""),
             question: String(item.question ?? ""),
-            difficulty: Number(item.difficulty ?? 0),
             timesShown: Number(item.times_shown ?? item.timesShown ?? 0),
             correctCount: Number(item.correct_count ?? item.correctCount ?? 0),
             correctRate: Number(item.correct_rate ?? item.correctRate ?? 0),
@@ -871,6 +889,11 @@ class API {
     return { success: true };
   }
 
+  async permanentlyDeleteCourseAsAdmin(courseId: string) {
+    await this.request(`/admin/courses/${courseId}/permanent`, { method: "DELETE" });
+    return { success: true };
+  }
+
   async setCoursePassword(courseId: string, password: string) {
     await this.request(`/teacher/courses/${courseId}/password`, {
       method: 'POST',
@@ -1054,16 +1077,10 @@ class API {
     return { success: true };
   }
 
-  async startLessonTest(
-    courseId: string,
-    lessonId: string,
-    options?: { forceExtraAttempt?: boolean },
-  ): Promise<{ attempt: LessonTestAttemptStart }> {
+  async startLessonTest(courseId: string, lessonId: string): Promise<{ attempt: LessonTestAttemptStart }> {
     const row = await this.request(`/courses/${courseId}/lessons/${lessonId}/test/start`, {
       method: "POST",
-      body: JSON.stringify({
-        forceExtraAttempt: Boolean(options?.forceExtraAttempt),
-      }),
+      body: JSON.stringify({}),
     });
     return {
       attempt: {
@@ -1078,12 +1095,25 @@ class API {
               type: (question.type || "single") as LessonTestQuestionPublic["type"],
               question: String(question.question || ""),
               options: Array.isArray(question.options) ? question.options.map((item: any) => String(item)) : [],
-              difficulty: Number(question.difficulty ?? 3),
             }))
           : [],
         startedAt: String(row.startedAt || ""),
       },
     };
+  }
+
+  async resetStudentLessonTestResultsByTeacher(courseId: string, lessonId: string, studentId: string) {
+    await this.request(`/teacher/courses/${courseId}/lessons/${lessonId}/test/students/${studentId}/reset`, {
+      method: "DELETE",
+    });
+    return { success: true };
+  }
+
+  async resetStudentLessonTestResultsByAdmin(courseId: string, lessonId: string, studentId: string) {
+    await this.request(`/admin/courses/${courseId}/lessons/${lessonId}/test/students/${studentId}/reset`, {
+      method: "DELETE",
+    });
+    return { success: true };
   }
 
   async submitTest(courseId: string, lessonId: string, attemptId: string, answers: LessonTestAnswer[]) {
@@ -1323,6 +1353,14 @@ class API {
   async restoreUser(userId: string) {
     await this.request(`/admin/users/${userId}/restore`, {
       method: 'PATCH',
+    });
+    return { success: true };
+  }
+
+  async permanentlyDeleteUser(userId: string, confirmation: string) {
+    await this.request(`/admin/users/${userId}/permanent`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation }),
     });
     return { success: true };
   }

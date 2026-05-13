@@ -598,6 +598,103 @@ func (r *EnrollmentRepo) ListAdminLessonTestAttempts(courseID, lessonID int64) (
 	return r.listLessonTestAttemptsWithStudent(courseID, lessonID)
 }
 
+func (r *EnrollmentRepo) ResetStudentLessonTestResultsByTeacher(teacherID, courseID, lessonID, studentID int64) error {
+	var courseTeacherID int64
+	if err := r.db.QueryRow(`SELECT teacher_id FROM courses WHERE id=$1`, courseID).Scan(&courseTeacherID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("course not found")
+		}
+		return err
+	}
+	if courseTeacherID != teacherID {
+		return errors.New("forbidden: course does not belong to teacher")
+	}
+	return r.resetStudentLessonTestResults(courseID, lessonID, studentID)
+}
+
+func (r *EnrollmentRepo) ResetStudentLessonTestResultsByAdmin(courseID, lessonID, studentID int64) error {
+	var exists bool
+	if err := r.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM courses WHERE id=$1)`, courseID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("course not found")
+	}
+	return r.resetStudentLessonTestResults(courseID, lessonID, studentID)
+}
+
+func (r *EnrollmentRepo) resetStudentLessonTestResults(courseID, lessonID, studentID int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var lessonInCourse bool
+	if err := tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1
+			FROM lessons l
+			JOIN course_modules m ON m.id = l.module_id
+			WHERE l.id=$1 AND m.course_id=$2
+		)
+	`, lessonID, courseID).Scan(&lessonInCourse); err != nil {
+		return err
+	}
+	if !lessonInCourse {
+		return errors.New("lesson not found in this course")
+	}
+
+	if _, err := tx.Exec(`
+		DELETE FROM lesson_test_attempts
+		WHERE course_id=$1 AND lesson_id=$2 AND student_id=$3
+	`, courseID, lessonID, studentID); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		DELETE FROM lesson_progress
+		WHERE user_id=$1 AND course_id=$2 AND lesson_id=$3
+	`, studentID, courseID, lessonID); err != nil {
+		return err
+	}
+
+	var totalLessons int
+	if err := tx.QueryRow(`
+		SELECT COUNT(*)
+		FROM lessons l
+		JOIN course_modules m ON m.id = l.module_id
+		WHERE m.course_id=$1
+	`, courseID).Scan(&totalLessons); err != nil {
+		return err
+	}
+
+	var completedLessons int
+	if err := tx.QueryRow(`
+		SELECT COUNT(*)
+		FROM lesson_progress
+		WHERE user_id=$1 AND course_id=$2
+	`, studentID, courseID).Scan(&completedLessons); err != nil {
+		return err
+	}
+
+	progress := 0
+	if totalLessons > 0 {
+		progress = int((completedLessons * 100) / totalLessons)
+	}
+	completed := progress >= 100
+
+	if _, err := tx.Exec(`
+		UPDATE enrollments
+		SET progress=$1, completed=$2
+		WHERE user_id=$3 AND course_id=$4
+	`, progress, completed, studentID, courseID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (r *EnrollmentRepo) listLessonTestAttemptsWithStudent(courseID, lessonID int64) ([]domain.LessonTestAttempt, error) {
 	rows, err := r.db.Query(`
 		SELECT a.id, a.course_id, a.lesson_id, a.student_id, COALESCE(u.name,''), COALESCE(u.email,''),
