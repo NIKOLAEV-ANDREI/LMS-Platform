@@ -121,7 +121,49 @@
 
 .lms-learning-background {
   background-color: #f8fafc;
-  background-image: none;
+  background-image:
+    repeating-linear-gradient(
+      135deg,
+      rgba(148, 163, 184, 0.16) 0px,
+      rgba(148, 163, 184, 0.16) 1px,
+      transparent 1px,
+      transparent 16px
+    );
+  background-size: 22px 22px;
+  background-repeat: repeat;
+}
+
+.lms-auth-background {
+  background-color: #f8fafc;
+  background-image:
+    repeating-linear-gradient(
+      135deg,
+      rgba(148, 163, 184, 0.28) 0px,
+      rgba(148, 163, 184, 0.28) 1px,
+      transparent 1px,
+      transparent 18px
+    ),
+    radial-gradient(circle at 10% 16%, rgba(39, 165, 231, 0.34) 0%, rgba(39, 165, 231, 0.22) 18%, transparent 46%),
+    radial-gradient(circle at 88% 82%, rgba(39, 165, 231, 0.3) 0%, rgba(39, 165, 231, 0.18) 20%, transparent 44%),
+    radial-gradient(circle at 52% 24%, rgba(39, 165, 231, 0.24) 0%, rgba(39, 165, 231, 0.12) 16%, transparent 38%),
+    radial-gradient(circle at 30% 78%, rgba(39, 165, 231, 0.18) 0%, transparent 36%);
+  background-size: 24px 24px, 190% 190%, 180% 180%, 165% 165%, 155% 155%;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  animation: auth-background-parallax 8s ease-in-out infinite alternate;
+}
+
+@keyframes auth-background-parallax {
+  0% {
+    background-position: 0 0, 4% 8%, 96% 92%, 50% 12%, 22% 84%;
+  }
+
+  50% {
+    background-position: 0 0, 40% 38%, 64% 58%, 34% 44%, 52% 64%;
+  }
+
+  100% {
+    background-position: 0 0, 74% 70%, 38% 36%, 24% 68%, 78% 24%;
+  }
 }
 
 .rich-text-editor:empty::before {

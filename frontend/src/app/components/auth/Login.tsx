@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { GraduationCap } from "lucide-react";
+import { Eye, EyeOff, GraduationCap } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../utils/api";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
@@ -13,6 +13,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -34,7 +35,7 @@ export default function Login() {
   };
 
   return (
-    <div className="lms-learning-background flex min-h-screen items-center justify-center p-4">
+    <div className="lms-learning-background lms-auth-background flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mb-4 flex justify-center">
@@ -60,15 +61,26 @@ export default function Login() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Пароль</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder={`Минимум ${LIMITS.passwordMin} символов`}
-                value={password}
-                onChange={(event) => setPassword(applyTextLimit(event.target.value, LIMITS.password, "Пароль"))}
-                required
-                minLength={LIMITS.passwordMin}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  className="pr-10"
+                  placeholder={`Минимум ${LIMITS.passwordMin} символов`}
+                  value={password}
+                  onChange={(event) => setPassword(applyTextLimit(event.target.value, LIMITS.password, "Пароль"))}
+                  required
+                  minLength={LIMITS.passwordMin}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Вход..." : "Войти"}

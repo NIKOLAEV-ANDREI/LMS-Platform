@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { BookOpen, GraduationCap, UserCircle } from "lucide-react";
+import { BookOpen, Eye, EyeOff, GraduationCap, UserCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../utils/api";
 import { applyTextLimit, LIMITS } from "../../utils/limits";
@@ -17,6 +17,8 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [teacherAccessPassword, setTeacherAccessPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showTeacherAccessPassword, setShowTeacherAccessPassword] = useState(false);
   const [role, setRole] = useState<"student" | "teacher">("student");
   const [loading, setLoading] = useState(false);
 
@@ -46,7 +48,7 @@ export default function Register() {
   };
 
   return (
-    <div className="lms-learning-background flex min-h-screen items-center justify-center p-4">
+    <div className="lms-learning-background lms-auth-background flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mb-4 flex justify-center">
@@ -85,15 +87,26 @@ export default function Register() {
 
             <div className="space-y-2">
               <Label htmlFor="password">Пароль</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder={`Минимум ${LIMITS.passwordMin} символов`}
-                value={password}
-                onChange={(event) => setPassword(applyTextLimit(event.target.value, LIMITS.password, "Пароль"))}
-                required
-                minLength={LIMITS.passwordMin}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  className="pr-10"
+                  placeholder={`Минимум ${LIMITS.passwordMin} символов`}
+                  value={password}
+                  onChange={(event) => setPassword(applyTextLimit(event.target.value, LIMITS.password, "Пароль"))}
+                  required
+                  minLength={LIMITS.passwordMin}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -134,14 +147,25 @@ export default function Register() {
             {role === "teacher" && (
               <div className="space-y-2">
                 <Label htmlFor="teacher-access-password">Код доступа преподавателя</Label>
-                <Input
-                  id="teacher-access-password"
-                  type="password"
-                  placeholder="Введите код доступа"
-                  value={teacherAccessPassword}
-                  onChange={(event) => setTeacherAccessPassword(applyTextLimit(event.target.value, 20, "Код доступа"))}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="teacher-access-password"
+                    type={showTeacherAccessPassword ? "text" : "password"}
+                    className="pr-10"
+                    placeholder="Введите код доступа"
+                    value={teacherAccessPassword}
+                    onChange={(event) => setTeacherAccessPassword(applyTextLimit(event.target.value, 20, "Код доступа"))}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTeacherAccessPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={showTeacherAccessPassword ? "Скрыть код доступа" : "Показать код доступа"}
+                  >
+                    {showTeacherAccessPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             )}
 

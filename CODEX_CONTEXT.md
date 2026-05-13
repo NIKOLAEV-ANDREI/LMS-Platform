@@ -2660,3 +2660,77 @@ pm run build - OK
 - Validation:
   - frontend: `npm run build` - OK
   - backend: `go test ./...` - OK
+
+## 2026-05-13 Local demo data seeded (teacher showcase)
+- Target account: `teacher@teacher.teacher` (local DB only).
+- Added 3 published Go courses to showcase platform features:
+  - `Go Backend Beginner: from zero to first API` (ID: 31)
+  - `Go Backend Middle: architecture, SQL, and concurrency` (ID: 32)
+  - `Go Backend Advanced: reliability, security, and production` (ID: 33, course password: `go2026`)
+- Each course currently has:
+  - 4 modules
+  - 16 lessons total (text + video + practical review-required + quiz per module)
+  - mixed quiz question types: single, multiple, true/false, open
+  - test settings with time limits, attempts, random question sampling, shuffle toggles
+  - lesson attachments on text/video lessons
+- Accidental temporary courses from failed seed attempts were soft-deleted from teacher space when possible.
+- 2026-05-13: Showcase courses (IDs 31,32,33) were fully localized to Russian content via local API updates: course/module/lesson titles, descriptions, practical tasks, and quiz questions/options.
+- 2026-05-13: Added 3 English-language showcase courses for `teacher2@teacher.teacher` (local DB), IDs 34/35/36. Each course has 4 modules, 16 lessons, mixed lesson types (text/video/review-required/test), attachments, quiz settings, and published status. Course 36 has access password `eng2026`.
+- 2026-05-13: Added 3 architecture/system-design showcase courses for `teacher3@teacher.teacher` (local DB), IDs 38/39/40. Each has 4 modules, 16 lessons, mixed lesson types (text/video/review-required/test), attachments, quiz settings, and published status. Course 40 has access password `arch2026`.
+- 2026-05-13: Student dashboard no longer shows the "available courses" section; course discovery is now intended via the dedicated "Search courses" page/tab only.
+## 133) 2026-05-13 - Teacher work review: added lesson task preview + fixed page text encoding
+- Updated `frontend/src/app/components/courses/TeacherReviewsPage.tsx` to clean UTF-8 Russian strings (removed mojibake/garbled labels on this page).
+- Added lesson context to review cards so teacher can understand what was assigned:
+  - lesson type badge (`Текстовый урок` / `Видеоурок` / `Тест`)
+  - expandable `Задание урока` block with lesson content preview
+  - fallback text when assignment description is empty
+- Added quick action `Открыть урок` directly from each submission card, alongside `Скачать` and `К курсу`.
+- Data mapping now enriches each submission row with `lessonId`, `lessonType`, and `lessonContent` from course modules.
+- Validation:
+  - frontend: `npm run build` - OK
+## 134) 2026-05-13 - Student lesson navigation: Next lesson button
+- Added student-only `Следующий урок` navigation on lesson page (`LessonViewer`):
+  - top action bar near `Назад к курсу`
+  - bottom action row near `Завершить урок` for non-test lessons
+- Next lesson is calculated by module/lesson order across the whole course.
+- Transition uses route `/courses/:courseId/lessons/:lessonId` and `replace: true` to avoid deep browser back-stack while moving lesson-by-lesson.
+- Validation:
+  - frontend: `npm run build` - OK
+## 135) 2026-05-13 - Keep student on lesson page after completion
+- Updated `LessonViewer`: after clicking `Завершить урок`, student now stays on the same lesson page.
+- Kept success toast (`Урок завершен!`) as requested.
+- Added local `lessonCompleted` state for enrolled students based on `api.getProgress(courseId)`:
+  - completion button becomes disabled after success
+  - button text switches to `Урок завершён`
+- Removed automatic redirect to course from lesson completion flow.
+- Validation:
+  - frontend: `npm run build` - OK
+## 136) 2026-05-13 - Lesson navigation UX fix
+- In `LessonViewer` removed duplicate top `Следующий урок` button.
+- Kept lesson-forward navigation only in bottom action row.
+- Added module transition logic for enrolled students:
+  - if current lesson is the last in its module and next module exists, show `Следующий модуль`
+  - click opens confirmation dialog
+  - confirm navigates to first lesson of next module
+- Existing `Завершить урок` behavior preserved (stay on page + success toast).
+- Validation:
+  - frontend: `npm run build` - OK
+## 137) 2026-05-13 - Test lesson navigation with in-progress lock
+- Added bottom navigation for students on test lessons in `LessonViewer`:
+  - `Следующий урок` or `Следующий модуль` (same logic as other lesson types)
+- Added navigation lock while test attempt is active and not submitted:
+  - buttons are disabled during active attempt
+  - helper text explains that the attempt must be finished first
+- Validation:
+  - frontend: `npm run build` - OK
+## 138) 2026-05-13 - Previous lesson/module navigation across lesson types
+- Extended student lesson navigation in `LessonViewer` with backward actions everywhere:
+  - `Предыдущий урок` (within current module)
+  - `Предыдущий модуль` (jumps to the last lesson of previous module when current lesson is first in module)
+- Backward navigation added for:
+  - regular non-test lessons
+  - review-required lessons (`canSubmitWork` block)
+  - test lessons
+- Test in-progress lock now blocks both forward and backward lesson/module navigation until attempt is finished.
+- Validation:
+  - frontend: `npm run build` - OK

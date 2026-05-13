@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Award, CheckCircle, Download, Paperclip, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Award, CheckCircle, Download, Paperclip, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import Layout from "../Layout";
 import { Badge } from "../ui/badge";
@@ -58,12 +58,14 @@ export default function LessonViewer() {
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
   const [timeExpiredScreen, setTimeExpiredScreen] = useState(false);
   const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState<"all" | "passed" | "failed">("all");
+  const [nextModuleConfirmOpen, setNextModuleConfirmOpen] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
   const [submission, setSubmission] = useState<LessonSubmission | null>(null);
   const [submissionNote, setSubmissionNote] = useState("");
   const [submissionFileName, setSubmissionFileName] = useState("");
   const [submissionFileUrl, setSubmissionFileUrl] = useState("");
   const [submittingWork, setSubmittingWork] = useState(false);
+  const [lessonCompleted, setLessonCompleted] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -118,8 +120,11 @@ export default function LessonViewer() {
       setAttemptHistory([]);
       setTeacherTestAnalytics(null);
       setTeacherTestAttempts([]);
+      setLessonCompleted(false);
 
       if (userData.role === "student" && userData.enrolledCourses.includes(courseId)) {
+        const { progress: progressData } = await api.getProgress(courseId);
+        setLessonCompleted(progressData.completedLessons.includes(lessonId));
         const { submissions } = await api.getMyCourseSubmissions(courseId);
         const current = submissions.find((item) => item.lessonId === lessonId) || null;
         setSubmission(current);
@@ -165,7 +170,7 @@ export default function LessonViewer() {
       if (!courseId || !lessonId) return;
       await api.completeLesson(courseId, lessonId);
       toast.success("Урок завершен!");
-      goBackToCourse();
+      setLessonCompleted(true);
     } catch (error: any) {
       toast.error(error.message || "Ошибка завершения урока");
     }
@@ -495,11 +500,54 @@ export default function LessonViewer() {
   const submissionRejected = submission?.status === "rejected";
   const submissionPending = submission?.status === "pending";
   const submissionApproved = submission?.status === "approved";
+  const orderedModules = course.modules.slice().sort((left, right) => left.order - right.order);
+  const currentModuleIndex = orderedModules.findIndex((module) => module.id === parentModuleId);
+  const currentModuleLessons =
+    currentModuleIndex >= 0
+      ? orderedModules[currentModuleIndex].lessons.slice().sort((left, right) => left.order - right.order)
+      : [];
+  const currentModuleLessonIndex = currentModuleLessons.findIndex((item) => item.id === lesson.id);
+  const previousLessonInModule =
+    currentModuleLessonIndex > 0 ? currentModuleLessons[currentModuleLessonIndex - 1] || null : null;
+  const nextLessonInModule =
+    currentModuleLessonIndex >= 0 ? currentModuleLessons[currentModuleLessonIndex + 1] || null : null;
+  const previousModule = currentModuleIndex > 0 ? orderedModules[currentModuleIndex - 1] || null : null;
+  const nextModule = currentModuleIndex >= 0 ? orderedModules[currentModuleIndex + 1] || null : null;
+  const previousModuleLastLesson = previousModule
+    ? previousModule.lessons.slice().sort((left, right) => left.order - right.order).at(-1) || null
+    : null;
+  const nextModuleFirstLesson = nextModule
+    ? nextModule.lessons.slice().sort((left, right) => left.order - right.order)[0] || null
+    : null;
+  const shouldShowPreviousModuleButton = Boolean(!previousLessonInModule && previousModuleLastLesson);
+  const shouldShowNextModuleButton = Boolean(!nextLessonInModule && nextModuleFirstLesson);
+  const isTestInProgress = Boolean(lesson.type === "test" && activeAttempt && !testSubmitted);
+
+  const openNextLesson = () => {
+    if (!courseId || !nextLessonInModule) return;
+    navigate(`/courses/${courseId}/lessons/${nextLessonInModule.id}`, { replace: true });
+  };
+
+  const openPreviousLesson = () => {
+    if (!courseId || !previousLessonInModule) return;
+    navigate(`/courses/${courseId}/lessons/${previousLessonInModule.id}`, { replace: true });
+  };
+
+  const openNextModule = () => {
+    if (!courseId || !nextModuleFirstLesson) return;
+    setNextModuleConfirmOpen(false);
+    navigate(`/courses/${courseId}/lessons/${nextModuleFirstLesson.id}`, { replace: true });
+  };
+
+  const openPreviousModule = () => {
+    if (!courseId || !previousModuleLastLesson) return;
+    navigate(`/courses/${courseId}/lessons/${previousModuleLastLesson.id}`, { replace: true });
+  };
 
   return (
     <Layout>
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Button variant="outline" size="sm" className="gap-2" onClick={goBackToCourse}>
             <ArrowLeft className="h-4 w-4" />
             Назад к курсу
@@ -975,10 +1023,123 @@ export default function LessonViewer() {
               </Card>
             )}
 
+            {isStudentEnrolled && canSubmitWork && (
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-6">
+                {previousLessonInModule && (
+                  <Button type="button" variant="outline" onClick={openPreviousLesson} className="gap-2">
+                    <ArrowLeft className="h-4 w-4" />
+                    Предыдущий урок
+                  </Button>
+                )}
+                {shouldShowPreviousModuleButton && (
+                  <Button type="button" variant="outline" onClick={openPreviousModule} className="gap-2">
+                    <ArrowLeft className="h-4 w-4" />
+                    Предыдущий модуль
+                  </Button>
+                )}
+                {nextLessonInModule && (
+                  <Button type="button" variant="outline" onClick={openNextLesson} className="gap-2">
+                    Следующий урок
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
+                {shouldShowNextModuleButton && (
+                  <Button type="button" variant="outline" onClick={() => setNextModuleConfirmOpen(true)} className="gap-2">
+                    Следующий модуль
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {lesson.type === "test" && isStudentEnrolled && (
+              <div className="space-y-2 border-t pt-6">
+                {isTestInProgress && (
+                  <p className="text-right text-sm text-muted-foreground">
+                    Завершите текущую попытку теста, чтобы перейти к другому уроку.
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {previousLessonInModule && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openPreviousLesson}
+                      className="gap-2"
+                      disabled={isTestInProgress}
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Предыдущий урок
+                    </Button>
+                  )}
+                  {shouldShowPreviousModuleButton && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openPreviousModule}
+                      className="gap-2"
+                      disabled={isTestInProgress}
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Предыдущий модуль
+                    </Button>
+                  )}
+                  {nextLessonInModule && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openNextLesson}
+                      className="gap-2"
+                      disabled={isTestInProgress}
+                    >
+                      Следующий урок
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {shouldShowNextModuleButton && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setNextModuleConfirmOpen(true)}
+                      className="gap-2"
+                      disabled={isTestInProgress}
+                    >
+                      Следующий модуль
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {lesson.type !== "test" && isStudentEnrolled && !canSubmitWork && (
-              <div className="flex items-center justify-end border-t pt-6">
-                <Button onClick={handleCompleteLesson} className="gap-2">
-                  Завершить урок
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-6">
+                {previousLessonInModule && (
+                  <Button type="button" variant="outline" onClick={openPreviousLesson} className="gap-2">
+                    <ArrowLeft className="h-4 w-4" />
+                    Предыдущий урок
+                  </Button>
+                )}
+                {shouldShowPreviousModuleButton && (
+                  <Button type="button" variant="outline" onClick={openPreviousModule} className="gap-2">
+                    <ArrowLeft className="h-4 w-4" />
+                    Предыдущий модуль
+                  </Button>
+                )}
+                {nextLessonInModule && (
+                  <Button type="button" variant="outline" onClick={openNextLesson} className="gap-2">
+                    Следующий урок
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
+                {shouldShowNextModuleButton && (
+                  <Button type="button" variant="outline" onClick={() => setNextModuleConfirmOpen(true)} className="gap-2">
+                    Следующий модуль
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button onClick={handleCompleteLesson} className="gap-2" disabled={lessonCompleted}>
+                  {lessonCompleted ? "Урок завершён" : "Завершить урок"}
                   <CheckCircle className="h-4 w-4" />
                 </Button>
               </div>
@@ -986,6 +1147,22 @@ export default function LessonViewer() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={nextModuleConfirmOpen} onOpenChange={setNextModuleConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Перейти к следующему модулю?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы завершили последний урок текущего модуля.
+              {nextModule ? ` Открыть модуль «${nextModule.title}»?` : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={openNextModule}>Перейти</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }
