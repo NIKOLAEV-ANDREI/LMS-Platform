@@ -48,7 +48,6 @@ export default function TeacherDashboard() {
   const [newCourse, setNewCourse] = useState({
     title: "",
     description: "",
-    imageUrl: "",
   });
 
   useEffect(() => {
@@ -159,10 +158,10 @@ export default function TeacherDashboard() {
   const handleCreateCourse = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      await api.createCourse(newCourse.title, newCourse.description, newCourse.imageUrl);
+      await api.createCourse(newCourse.title, newCourse.description);
       toast.success("Курс создан успешно");
       setDialogOpen(false);
-      setNewCourse({ title: "", description: "", imageUrl: "" });
+      setNewCourse({ title: "", description: "" });
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка создания курса");
@@ -362,22 +361,6 @@ export default function TeacherDashboard() {
                   />
                   <CharCounter value={newCourse.description} max={LIMITS.courseDescription} />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="imageUrl">URL изображения (необязательно)</Label>
-                  <Input
-                    id="imageUrl"
-                    type="url"
-                    value={newCourse.imageUrl}
-                    onChange={(event) =>
-                      setNewCourse((prev) => ({
-                        ...prev,
-                        imageUrl: applyTextLimit(event.target.value, LIMITS.imageUrl, "URL изображения"),
-                      }))
-                    }
-                  />
-                </div>
-
                 <Button type="submit" className="w-full">
                   Создать курс
                 </Button>
@@ -635,3 +618,5 @@ export default function TeacherDashboard() {
     </Layout>
   );
 }
+
+

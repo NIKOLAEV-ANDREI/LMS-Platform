@@ -46,7 +46,6 @@ export default function Profile() {
   const [newTeacherCourse, setNewTeacherCourse] = useState({
     title: "",
     description: "",
-    imageUrl: "",
   });
   const [form, setForm] = useState({ name: "", email: "", password: "" });
 
@@ -243,10 +242,10 @@ export default function Profile() {
   const handleCreateTeacherCourse = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      await api.createCourse(newTeacherCourse.title, newTeacherCourse.description, newTeacherCourse.imageUrl);
+      await api.createCourse(newTeacherCourse.title, newTeacherCourse.description);
       toast.success("Курс создан успешно");
       setTeacherDialogOpen(false);
-      setNewTeacherCourse({ title: "", description: "", imageUrl: "" });
+      setNewTeacherCourse({ title: "", description: "" });
       await loadData();
     } catch (error: any) {
       toast.error(error.message || "Ошибка создания курса");
@@ -691,22 +690,6 @@ export default function Profile() {
                       />
                       <CharCounter value={newTeacherCourse.description} max={LIMITS.courseDescription} />
                     </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="teacher-course-image">URL изображения (необязательно)</Label>
-                      <Input
-                        id="teacher-course-image"
-                        type="url"
-                        value={newTeacherCourse.imageUrl}
-                        onChange={(event) =>
-                          setNewTeacherCourse((prev) => ({
-                            ...prev,
-                            imageUrl: applyTextLimit(event.target.value, LIMITS.imageUrl, "URL изображения"),
-                          }))
-                        }
-                      />
-                    </div>
-
                     <Button type="submit" className="w-full">
                       Создать курс
                     </Button>
@@ -874,3 +857,5 @@ export default function Profile() {
     </Layout>
   );
 }
+
+

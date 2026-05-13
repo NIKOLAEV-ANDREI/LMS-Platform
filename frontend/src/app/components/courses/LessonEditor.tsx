@@ -54,6 +54,13 @@ const defaultTestSettings: TestSettings = {
   showCorrectAnswers: false,
 };
 
+const defaultTestSettingInputs = {
+  passScore: "70",
+  maxAttempts: "3",
+  timeLimitMin: "0",
+  randomQuestionCount: "0",
+};
+
 export default function LessonEditor() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
   const navigate = useNavigate();
@@ -75,6 +82,7 @@ export default function LessonEditor() {
     attachments: [] as LessonAttachment[],
   });
   const [testSettings, setTestSettings] = useState<TestSettings>(defaultTestSettings);
+  const [testSettingInputs, setTestSettingInputs] = useState(defaultTestSettingInputs);
   const [testQuestions, setTestQuestions] = useState<EditableQuestion[]>([]);
   const draftStorageKey = courseId && lessonId ? `lms:lesson-editor-draft:${courseId}:${lessonId}` : null;
 
@@ -188,12 +196,25 @@ export default function LessonEditor() {
           requiresReview: Boolean(draftData.lessonForm.requiresReview),
           attachments: Array.isArray(draftData.lessonForm.attachments) ? draftData.lessonForm.attachments : [],
         });
-        setTestSettings(draftData.testSettings || serverSettings);
+        const safeSettings = draftData.testSettings || serverSettings;
+        setTestSettings(safeSettings);
+        setTestSettingInputs({
+          passScore: String(safeSettings.passScore),
+          maxAttempts: String(safeSettings.maxAttempts),
+          timeLimitMin: String(Math.floor(safeSettings.timeLimitSec / 60)),
+          randomQuestionCount: String(safeSettings.randomQuestionCount),
+        });
         setTestQuestions(Array.isArray(draftData.testQuestions) ? draftData.testQuestions : []);
         toast.info("Черновик урока восстановлен");
       } else {
         setLessonForm(serverLessonForm);
         setTestSettings(serverSettings);
+        setTestSettingInputs({
+          passScore: String(serverSettings.passScore),
+          maxAttempts: String(serverSettings.maxAttempts),
+          timeLimitMin: String(Math.floor(serverSettings.timeLimitSec / 60)),
+          randomQuestionCount: String(serverSettings.randomQuestionCount),
+        });
         setTestQuestions(serverQuestions);
       }
 
@@ -219,6 +240,71 @@ export default function LessonEditor() {
         correctText: "",
       },
     ]);
+  };
+
+  const commitPassScoreInput = () => {
+    const rawValue = testSettingInputs.passScore.trim();
+    if (rawValue === "") {
+      setTestSettingInputs((prev) => ({ ...prev, passScore: String(testSettings.passScore) }));
+      return;
+    }
+    const parsed = Number(rawValue);
+    if (Number.isNaN(parsed)) {
+      setTestSettingInputs((prev) => ({ ...prev, passScore: String(testSettings.passScore) }));
+      return;
+    }
+    const next = Math.max(LIMITS.testPassScoreMin, Math.min(LIMITS.testPassScoreMax, Math.round(parsed)));
+    setTestSettings((prev) => ({ ...prev, passScore: next }));
+    setTestSettingInputs((prev) => ({ ...prev, passScore: String(next) }));
+  };
+
+  const commitMaxAttemptsInput = () => {
+    const rawValue = testSettingInputs.maxAttempts.trim();
+    if (rawValue === "") {
+      setTestSettingInputs((prev) => ({ ...prev, maxAttempts: String(testSettings.maxAttempts) }));
+      return;
+    }
+    const parsed = Number(rawValue);
+    if (Number.isNaN(parsed)) {
+      setTestSettingInputs((prev) => ({ ...prev, maxAttempts: String(testSettings.maxAttempts) }));
+      return;
+    }
+    const next = Math.max(LIMITS.testAttemptsMin, Math.min(LIMITS.testAttemptsMax, Math.round(parsed)));
+    setTestSettings((prev) => ({ ...prev, maxAttempts: next }));
+    setTestSettingInputs((prev) => ({ ...prev, maxAttempts: String(next) }));
+  };
+
+  const commitTimeLimitMinutesInput = () => {
+    const rawValue = testSettingInputs.timeLimitMin.trim();
+    if (rawValue === "") {
+      setTestSettingInputs((prev) => ({ ...prev, timeLimitMin: String(Math.floor(testSettings.timeLimitSec / 60)) }));
+      return;
+    }
+    const parsed = Number(rawValue);
+    if (Number.isNaN(parsed)) {
+      setTestSettingInputs((prev) => ({ ...prev, timeLimitMin: String(Math.floor(testSettings.timeLimitSec / 60)) }));
+      return;
+    }
+    const minutes = Math.max(0, Math.min(LIMITS.testTimeLimitMaxMin, Math.round(parsed)));
+    setTestSettings((prev) => ({ ...prev, timeLimitSec: minutes * 60 }));
+    setTestSettingInputs((prev) => ({ ...prev, timeLimitMin: String(minutes) }));
+  };
+
+  const commitRandomQuestionCountInput = () => {
+    const rawValue = testSettingInputs.randomQuestionCount.trim();
+    if (rawValue === "") {
+      setTestSettingInputs((prev) => ({ ...prev, randomQuestionCount: String(testSettings.randomQuestionCount) }));
+      return;
+    }
+    const parsed = Number(rawValue);
+    if (Number.isNaN(parsed)) {
+      setTestSettingInputs((prev) => ({ ...prev, randomQuestionCount: String(testSettings.randomQuestionCount) }));
+      return;
+    }
+    const questionsCap = Math.max(0, testQuestions.length);
+    const next = Math.max(0, Math.min(Math.min(LIMITS.testRandomQuestionsMax, questionsCap), Math.round(parsed)));
+    setTestSettings((prev) => ({ ...prev, randomQuestionCount: next }));
+    setTestSettingInputs((prev) => ({ ...prev, randomQuestionCount: String(next) }));
   };
 
   const updateQuestion = (index: number, patch: Partial<EditableQuestion>) => {
@@ -626,75 +712,47 @@ export default function LessonEditor() {
                     </CardHeader>
                     <CardContent className="grid gap-3 md:grid-cols-2">
                       <div className="space-y-1">
-                        <Label>Проходной балл (%) (макс {LIMITS.testPassScoreMax})</Label>
+                        <Label>Проходной балл (%) (максимум {LIMITS.testPassScoreMax})</Label>
                         <Input
                           type="number"
                           min={LIMITS.testPassScoreMin}
                           max={LIMITS.testPassScoreMax}
-                          value={testSettings.passScore}
-                          onChange={(event) =>
-                            setTestSettings((prev) => ({
-                              ...prev,
-                              passScore: Math.max(
-                                LIMITS.testPassScoreMin,
-                                Math.min(LIMITS.testPassScoreMax, Number(event.target.value || prev.passScore)),
-                              ),
-                            }))
-                          }
+                          value={testSettingInputs.passScore}
+                          onChange={(event) => setTestSettingInputs((prev) => ({ ...prev, passScore: event.target.value }))}
+                          onBlur={commitPassScoreInput}
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label>Максимум попыток (макс {LIMITS.testAttemptsMax})</Label>
+                        <Label>Максимум попыток (максимум {LIMITS.testAttemptsMax})</Label>
                         <Input
                           type="number"
                           min={LIMITS.testAttemptsMin}
                           max={LIMITS.testAttemptsMax}
-                          value={testSettings.maxAttempts}
-                          onChange={(event) =>
-                            setTestSettings((prev) => ({
-                              ...prev,
-                              maxAttempts: Math.max(
-                                LIMITS.testAttemptsMin,
-                                Math.min(LIMITS.testAttemptsMax, Number(event.target.value || prev.maxAttempts)),
-                              ),
-                            }))
-                          }
+                          value={testSettingInputs.maxAttempts}
+                          onChange={(event) => setTestSettingInputs((prev) => ({ ...prev, maxAttempts: event.target.value }))}
+                          onBlur={commitMaxAttemptsInput}
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label>Лимит времени (мин) (макс {LIMITS.testTimeLimitMaxMin})</Label>
+                        <Label>Лимит времени (мин) (максимум {LIMITS.testTimeLimitMaxMin})</Label>
                         <Input
                           type="number"
                           min={0}
                           max={LIMITS.testTimeLimitMaxMin}
-                          value={Math.floor(testSettings.timeLimitSec / 60)}
-                          onChange={(event) =>
-                            setTestSettings((prev) => ({
-                              ...prev,
-                              timeLimitSec: Math.max(0, Math.min(LIMITS.testTimeLimitMaxMin, Number(event.target.value || 0))) * 60,
-                            }))
-                          }
+                          value={testSettingInputs.timeLimitMin}
+                          onChange={(event) => setTestSettingInputs((prev) => ({ ...prev, timeLimitMin: event.target.value }))}
+                          onBlur={commitTimeLimitMinutesInput}
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label>Случайных вопросов в попытке (макс {LIMITS.testRandomQuestionsMax})</Label>
+                        <Label>Случайных вопросов в попытке (максимум {LIMITS.testRandomQuestionsMax})</Label>
                         <Input
                           type="number"
                           min={0}
                           max={LIMITS.testRandomQuestionsMax}
-                          value={testSettings.randomQuestionCount}
-                          onChange={(event) =>
-                            setTestSettings((prev) => ({
-                              ...prev,
-                              randomQuestionCount: Math.max(
-                                0,
-                                Math.min(
-                                  Math.min(LIMITS.testRandomQuestionsMax, Math.max(0, testQuestions.length)),
-                                  Number(event.target.value || 0),
-                                ),
-                              ),
-                            }))
-                          }
+                          value={testSettingInputs.randomQuestionCount}
+                          onChange={(event) => setTestSettingInputs((prev) => ({ ...prev, randomQuestionCount: event.target.value }))}
+                          onBlur={commitRandomQuestionCountInput}
                         />
                       </div>
                       <label className="flex items-center gap-2 text-sm">

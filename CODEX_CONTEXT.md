@@ -2646,3 +2646,17 @@ pm run build - OK
 - Validation:
   - backend: `go test ./...` - OK
   - frontend: `npm run build` - OK
+
+## 132) 2026-05-13 - Removed image URL field from course creation forms
+- Frontend forms updated to remove `URL изображения` from course creation:
+  - teacher dashboard create-course dialog
+  - teacher profile create-course dialog
+- Local state for new course form no longer stores `imageUrl`.
+- API calls updated:
+  - `api.createCourse(...)` now called with only `title` and `description`.
+  - method signature in `frontend/src/app/utils/api.ts` simplified to two args.
+- Removed unused `LIMITS.imageUrl`.
+- Existing course card image rendering logic kept (for legacy courses that may already contain image URL).
+- Validation:
+  - frontend: `npm run build` - OK
+  - backend: `go test ./...` - OK

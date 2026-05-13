@@ -10,7 +10,6 @@ export const LIMITS = {
   courseDescription: 2000,
   courseAccessPasswordMin: 4,
   courseAccessPassword: 10,
-  imageUrl: 2048,
 
   moduleTitle: 120,
   moduleDescription: 1500,
@@ -56,3 +55,4 @@ export function applyTextLimit(value: string, max: number, label: string): strin
 export function countLabel(value: string, max: number) {
   return `${value.length}/${max}`;
 }
+

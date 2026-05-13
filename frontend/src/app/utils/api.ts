@@ -819,7 +819,7 @@ class API {
     };
   }
 
-  async createCourse(title: string, description: string, _imageUrl?: string) {
+  async createCourse(title: string, description: string) {
     const course = await this.request('/teacher/courses', {
       method: 'POST',
       body: JSON.stringify({ title, description }),

@@ -384,7 +384,7 @@ export default function CourseEditor() {
                           variant="ghost"
                           size="icon"
                           onClick={() => removeModule(module)}
-                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          className="h-8 w-8 text-destructive transition-colors hover:bg-destructive/10 hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -426,7 +426,7 @@ export default function CourseEditor() {
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => removeLesson(module.id, lesson)}
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  className="h-8 w-8 text-destructive transition-colors hover:bg-destructive/10 hover:text-destructive"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
