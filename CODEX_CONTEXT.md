@@ -2631,3 +2631,18 @@ pm run build - OK
 - Validation:
   - backend: `go test ./...` - OK
   - frontend: `npm run build` - OK
+
+## 131) 2026-05-13 - Removed unused legacy files
+- Deleted guaranteed-unused legacy files and artifacts:
+  - `frontend/supabase/functions/server/index.tsx`
+  - `frontend/supabase/functions/server/kv_store.tsx`
+  - `frontend/utils/supabase/info.tsx`
+  - `frontend/src/app/components/figma/ImageWithFallback.tsx`
+  - `frontend/src/styles/globals.css`
+  - `frontend/default_shadcn_theme.css`
+  - `frontend/learning-pattern.svg`
+  - `backend/server.exe`
+- Kept local DB backups and dumps untouched.
+- Validation:
+  - backend: `go test ./...` - OK
+  - frontend: `npm run build` - OK
